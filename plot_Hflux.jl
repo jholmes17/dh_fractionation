@@ -27,7 +27,7 @@ function plot_Hflux(readfile, dincluded, poster=false)
         entries80 = flux[1, altitude, :]
         ppm80[entries80[2]] =  entries80[3:end-1]
 
-        entries20 = flux[2, altitude, :]
+        entries20 = flux[1, altitude, :]  # !! CHANGE THE 1 BACK TO "2" WHEN DOING ALL PROFILES
         ppm20[entries20[2]] = entries20[3:end-1]
 
         entries40 = flux[3, altitude, :]
@@ -57,6 +57,7 @@ function plot_Hflux(readfile, dincluded, poster=false)
         i += 1
     end
 
+    # control font sizes for poster making
     if poster==true
         fs = Dict("ticks"=>24, "labels"=>28, "legend"=>18, "title"=>30)
     elseif poster==false
@@ -68,7 +69,7 @@ function plot_Hflux(readfile, dincluded, poster=false)
            fontsize=fs["labels"])
     xlim(10^3,10^7)
     if dincluded=="D"
-        ylim(10^2,10^5)
+        ylim(10^2, 10^5)
     else
         ylim(10^8, 10^10)
     end
@@ -105,7 +106,7 @@ function plot_Hflux(readfile, dincluded, poster=false)
            fontsize=fs["labels"])
     xlim(10^1, 10^17)
     if dincluded=="D"
-        ylim(10^2,10^5)
+        ylim(10^2, 10^5)
     else
         ylim(10^8, 10^10)
     end
@@ -124,11 +125,12 @@ function plot_Hflux(readfile, dincluded, poster=false)
 end
 
 #Results-Standard Water/
-f1 = "/home/emc/Google Drive/Phys/LASP/Mars/chaffincode-working/H_esc_flux_history.h5"
+lead = "/home/emc/Google Drive/"#"/data/GoogleDrive/"
+f1 = lead*"Phys/LASP/Mars/chaffincode-working/H_esc_flux_history.h5"
 plot_Hflux(f1, "H", true)
-f2 = "/home/emc/Google Drive/Phys/LASP/Mars/chaffincode-working/H_and_D_esc_flux_history.h5"
+f2 = lead*"Phys/LASP/Mars/chaffincode-working/H_and_D_esc_flux_history.h5"
 plot_Hflux(f2, "H+D", true)
-f3 = "/home/emc/Google Drive/Phys/LASP/Mars/chaffincode-working/D_esc_flux_history.h5"
+f3 = lead*"Phys/LASP/Mars/chaffincode-working/D_esc_flux_history.h5"
 plot_Hflux(f3, "D", true)
 
 # f4 = "/home/emc/Google Drive/Phys/LASP/Mars/chaffincode v0.4.7/H_esc_flux_history-Mikesresult.h5"

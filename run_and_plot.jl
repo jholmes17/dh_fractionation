@@ -235,17 +235,18 @@ end
     (reactionrateshist,fluxhist)=get_rates_and_fluxes(readfile)
 
     # doing this way makes it work if files already exist
-            h5open(readfile, isfile(readfile) ? "r+" : "w") do file
-               write(file,"fluxes/flux_history",fluxhist)
-               write(file,"rates/reaction_rates_history",reactionrateshist)
-            end
+    h5open(readfile, isfile(readfile) ? "r+" : "w") do file
+       write(file,"fluxes/flux_history",fluxhist)
+       write(file,"rates/reaction_rates_history",reactionrateshist)
+    end
     return
 end
 
 pmap(x->println(string("parmsvec[i][1]=",x[1],", parmsvec[i][2]=",x[2],",
      filename=",x[3])),[[p,f;] for (p,f) in zip(parmsvec,filenamevec)])
 
-readfile = "/home/emc/Google Drive/Phys/LASP/Mars/chaffincode-working/converged_standardwater_D.h5"
+lead = "/data/GoogleDrive/"#"/home/emc/Google Drive/"#
+readfile = lead*"Phys/LASP/Mars/chaffincode-working/converged_standardwater_D.h5"
 println("ALERT: Using file: ", readfile)
 
 # This runs the simulation for a year and returns
@@ -253,13 +254,13 @@ oneyeartimepts = logspace(log10(1),log10(3.14e7),1000)
 oneyeartimediff = oneyeartimepts[2:end]-oneyeartimepts[1:end-1]
 n_converged = get_ncurrent(readfile)
 
-println("running sim for one year")
-oneyearfn = "one_year_response_to_80ppm_at_60km.h5"
-n_oneyear = runwaterprofile(n_converged, 80, 60, oneyeartimediff, oneyearfn)
-
-println("now removing the water")
-returnfn = "one_year_response_to_80ppm_at_60km_return.h5"
-n_return = runwaterprofile(n_oneyear, 0., 60, oneyeartimediff, returnfn)
+# println("running sim for one year")
+# oneyearfn = "one_year_response_to_80ppm_at_60km.h5"
+# n_oneyear = runwaterprofile(n_converged, 80, 60, oneyeartimediff, oneyearfn)
+#
+# println("now removing the water")
+# returnfn = "one_year_response_to_80ppm_at_60km_return.h5"
+# n_return = runwaterprofile(n_oneyear, 0., 60, oneyeartimediff, returnfn)
 
 println("Now doing water profiles")
 # This runs the simulation for all added ppms and altitudes
@@ -322,9 +323,19 @@ for lp in 1:length(parmsvec)
     writehdoprof[ippm,ialt,:] = [parmsvec[lp],hdoprofs[lp];]
 end
 
+
+# H, D, H+D ESCAPE FLUX HISTORY ================================================
 # Write out the file with hydrogen fluxes
 println("Writing H esc file")
 hfile = "./H_esc_flux_history.h5"
+# if isfile(hfile)==true
+# elseif isfile(hfile)==false
+#     h5write(hfile,"fluxes/fluxvals",writeHfluxes)
+#     h5write(hfile,"fluxes/times",h5read("./ppm_20_alt_20.h5","n_current/timelist"))
+#     h5write(hfile,"waterprofs/ppm",writewaterprof)
+#     h5write(hfile,"waterprofs/alt",alt[2:end-1])
+# end
+# ORIGINAL STUFF:
 h5open(hfile, isfile(hfile) ? "r+" : "w") do file
    write(file,"fluxes/fluxvals",writeHfluxes)
    write(file,"fluxes/times",h5read("./ppm_20_alt_20.h5","n_current/timelist"))
@@ -332,9 +343,18 @@ h5open(hfile, isfile(hfile) ? "r+" : "w") do file
    write(file,"waterprofs/alt",alt[2:end-1])
 end
 
+
+#
 # write out just the D fluxes
 println("Writing D esc file")
 hfile = "./D_esc_flux_history.h5"
+# if isfile(hfile)==true
+# elseif isfile(hfile)==false
+#     h5write(hfile,"fluxes/fluxvals",writeDfluxes)
+#     h5write(hfile,"fluxes/times",h5read("./ppm_20_alt_20.h5","n_current/timelist"))
+#     h5write(hfile,"hdoprofs/ppm",writehdoprof)
+#     h5write(hfile,"waterprofs/alt",alt[2:end-1])
+# end
 h5open(hfile, isfile(hfile) ? "r+" : "w") do file
    write(file,"fluxes/fluxvals",writeDfluxes)
    write(file,"fluxes/times",h5read("./ppm_20_alt_20.h5","n_current/timelist"))
