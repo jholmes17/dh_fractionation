@@ -22,9 +22,9 @@ using PyPlot
 using HDF5, JLD
 using LaTeXStrings
 
-#################################
-##########Species LIST###########
-#################################
+################################################################################
+################################ Species LIST ##################################
+################################################################################
 
 # array of symbols for each species
 const fullspecieslist = [:CO2, :O2, :O3, :H2, :OH, :HO2, :H2O, :H2O2, :O, :CO,
@@ -32,17 +32,18 @@ const fullspecieslist = [:CO2, :O2, :O3, :H2, :OH, :HO2, :H2O, :H2O2, :O, :CO,
                          # species for deuterium chemistry:
                          :HDO, :OD, :HDO2, :D, :DO2, :HD, :DOCO];
 specieslist=fullspecieslist;
-const nochemspecies = [:N2, :Ar, :CO2pl,:H2O, :HDO];
+const nochemspecies = [:N2, :Ar, :CO2pl, :H2O, :HDO];
 const chemspecies = setdiff(specieslist, nochemspecies);
 const notransportspecies = [:CO2pl, :H2O, :HDO];
 const transportspecies = setdiff(specieslist, notransportspecies);
-const speciesmolmasslist = Dict(:CO2=>44, :O2=>32, :O3=>48, :H2=>2, :OH=>9,
-                                :HO2=>17, :H2O=>18, :H2O2=>34, :O=>16, :CO=>28,
+const speciesmolmasslist = Dict(:CO2=>44, :O2=>32, :O3=>48, :H2=>2, :OH=>17,
+                                :HO2=>33, :H2O=>18, :H2O2=>34, :O=>16, :CO=>28,
                                 :O1D=>16, :H=>1, :N2=>28, :Ar=>40, :CO2pl=>44,
                                 :HOCO=>45,
                                 # deuterium chemistry:
-                                :HDO=>19, :OD=>10, :HDO2=>35, :D=>2, :DO2=>34,
+                                :HDO=>19, :OD=>18, :HDO2=>35, :D=>2, :DO2=>34,
                                 :HD=>3, :DOCO=>46);
+                                # note that Ar has a mass of 40 because its the most stable isotope
 
 function fluxsymbol(x)
     Symbol(string("f",string(x)))
@@ -73,8 +74,8 @@ const Jratelist=[:JCO2ion,:JCO2toCOpO,:JCO2toCOpO1D,:JO2toOpO,:JO2toOpO1D,
 # the test case was created by hand by Mike Chaffin and saved for automated use.
 # Change following line as needed depending on local machine
 
-lead = "/data/GoogleDrive/"#"/home/emc/Google Drive/"#
-readfile = lead * "Phys/LASP/Mars/chaffincode-working/converged_standardwater_D.h5"
+lead = "/data/GoogleDrive/"#"/home/emc/GoogleDrive/"#
+readfile = lead * "Phys/LASP/chaffincode-working/converged_standardwater.h5"
 println("ALERT: Using file: ", readfile)
 const alt=h5read(readfile,"n_current/alt")
 
@@ -89,41 +90,6 @@ function get_ncurrent(readfile)
     n_current
 end
 
-n_current = get_ncurrent(readfile)
-
-#=
-THIS SECTION ADDS NEW SPECIES AND J RATES TO THE CODEBASE.
-Uncomment this section to add new species in the style shown below. Comment it
-out when running the simulation without adding new species (most of the time).
-TO ADD A NEW SPECIES, add these lines, where multiplier is some scaling ratio:
-n_current[:NewSpecies] = n_current[:SimilarSpecies] * multiplier
-=#
-
-# General D/H ratio for mars, 5.5*SMOW, Atmosphere & Climate of Mars 2017
-DH = 5.5 * 1.6e-4        # SMOW value from Yung 1988. Needn't be super precise.
-# modify n_current
-# n_current[:HDO] = n_current[:H2O] * DH
-# n_current[:OD] = n_current[:OH] * DH
-# n_current[:HDO2] = n_current[:H2O2] * DH
-# n_current[:D] = n_current[:H] * DH
-# n_current[:DO2] = n_current[:HO2] * DH
-# n_current[:HD] = n_current[:H2] * DH
-# n_current[:DOCO] = n_current[:HOCO] * DH
-
-# add the new Jrates --the values will get populated automatically
-# n_current[:JHDOtoHpOD] = 0.0 * ones(length(alt))
-# n_current[:JHDOtoDpOH] = 0.0 * ones(length(alt))
-# n_current[:JHDO2toOHpOD] = 0.0 * ones(length(alt))
-# n_current[:JHDOtoHDpO1D] = 0.0 * ones(length(alt)) # NEW 3/28
-# n_current[:JHDOtoHpDpO] = 0.0 * ones(length(alt)) # NEW 3/28
-# n_current[:JODtoOpD] = 0.0 * ones(length(alt)) # NEW 3/28
-# n_current[:JHDtoHpD] = 0.0 * ones(length(alt)) # NEW 3/29
-# n_current[:JDO2toODpO] = 0.0 * ones(length(alt)) # NEW 3/29
-# n_current[:JHDO2toDO2pH] = 0.0 * ones(length(alt)) # NEW 3/30
-# n_current[:JHDO2toHO2pD] = 0.0 * ones(length(alt)) # NEW 3/30
-# n_current[:JHDO2toHDOpO1D] =  0.0 * ones(length(alt)) # NEW 3/30
-# n_current[:JODtoO1DpD]  =  0.0 * ones(length(alt)) # NEW 3/30
-
 function write_ncurrent(n_current, filename)
     n_current_mat = Array{Float64}(length(alt)-2, length(collect(keys(n_current))));
     for ispecies in [1:length(collect(keys(n_current)));]
@@ -135,6 +101,41 @@ function write_ncurrent(n_current, filename)
     h5write(filename,"n_current/alt",alt)
     h5write(filename,"n_current/species",map(string, collect(keys(n_current))))
 end
+
+n_current = get_ncurrent(readfile)
+
+#=
+THIS SECTION ADDS NEW SPECIES AND J RATES TO THE CODEBASE.
+Uncomment this section to add new species in the style shown below. Comment it
+out when running the simulation without adding new species (most of the time).
+=#
+
+# General D/H ratio for mars, 5.5*SMOW, Atmosphere & Climate of Mars 2017
+DH = 5.5 * 1.6e-4        # SMOW value from Yung 1988
+# modify n_current
+n_current[:HDO] = n_current[:H2O] * DH
+n_current[:OD] = n_current[:OH] * DH
+n_current[:HDO2] = n_current[:H2O2] * DH
+n_current[:D] = n_current[:H] * DH
+n_current[:DO2] = n_current[:HO2] * DH
+n_current[:HD] = n_current[:H2] * DH
+n_current[:DOCO] = n_current[:HOCO] * DH
+
+# add the new Jrates --the values will get populated automatically
+n_current[:JHDOtoHpOD] = 0.0 * ones(length(alt))
+n_current[:JHDOtoDpOH] = 0.0 * ones(length(alt))
+n_current[:JHDO2toOHpOD] = 0.0 * ones(length(alt))
+n_current[:JHDOtoHDpO1D] = 0.0 * ones(length(alt)) # NEW 3/28
+n_current[:JHDOtoHpDpO] = 0.0 * ones(length(alt)) # NEW 3/28
+n_current[:JODtoOpD] = 0.0 * ones(length(alt)) # NEW 3/28
+n_current[:JHDtoHpD] = 0.0 * ones(length(alt)) # NEW 3/29
+n_current[:JDO2toODpO] = 0.0 * ones(length(alt)) # NEW 3/29
+n_current[:JHDO2toDO2pH] = 0.0 * ones(length(alt)) # NEW 3/30
+n_current[:JHDO2toHO2pD] = 0.0 * ones(length(alt)) # NEW 3/30
+n_current[:JHDO2toHDOpO1D] =  0.0 * ones(length(alt)) # NEW 3/30
+n_current[:JODtoO1DpD]  =  0.0 * ones(length(alt)) # NEW 3/30
+
+
 
 ################################################################################
 ########################## discretization parameters ###########################
@@ -174,23 +175,21 @@ reactionnet = [   #Photodissociation
             [[:OD], [:O1D, :D], :JODtoO1DpD],
             [[:HO2], [:OH, :O], :JHO2toOHpO], # other branches should be here, but
                                               # have not been measured
-            # [[:DO2], [:OD, :O], :JDO2toODpO],  # added 3/29 using HO2 xsects
+            [[:DO2], [:OD, :O], :JDO2toODpO],  # added 3/29 using HO2 xsects
             [[:H2O], [:H, :OH], :JH2OtoHpOH],
             [[:H2O], [:H2, :O1D], :JH2OtoH2pO1D],
             [[:H2O], [:H, :H, :O], :JH2OtoHpHpO],
-            [[:HDO], [:H, :OD], :JHDOtoHpOD], # *** this needs to be half of JH2OtoHpOH!
-            [[:HDO], [:D, :OH], :JHDOtoDpOH],# *** this needs to be half of JH2OtoHpOH!
+            [[:HDO], [:H, :OD], :JHDOtoHpOD], # TODO: check this is half of JH2OtoHpOH!
+            [[:HDO], [:D, :OH], :JHDOtoDpOH], # TODO: check this is half of JH2OtoHpOH!
             [[:HDO], [:HD, :O1D], :JHDOtoHDpO1D], # added 3/28, inspiration from Yung89
             [[:HDO], [:H, :D, :O], :JHDOtoHpDpO], # added 3/28, inspiration from Yung89
             [[:H2O2], [:OH, :OH], :JH2O2to2OH],
             [[:H2O2], [:HO2, :H], :JH2O2toHO2pH],
             [[:H2O2], [:H2O, :O1D], :JH2O2toH2OpO1D],
-
             [[:HDO2], [:OH, :OD], :JHDO2toOHpOD], #  Yung89; using xsect for H2O2
             [[:HDO2], [:DO2, :H], :JHDO2toDO2pH], # added 3/30 using H2O2 xsects
             [[:HDO2], [:HO2, :D], :JHDO2toHO2pD], # added 3/30 using H2O2 xsects
             [[:HDO2], [:HDO, :O1D], :JHDO2toHDOpO1D], # added 3/30 using H2O2 xsects
-
 
             # recombination of O
             [[:O, :O, :M], [:O2, :M], :(1.8*3.0e-33*(300./T)^3.25)],
@@ -214,13 +213,13 @@ reactionnet = [   #Photodissociation
 
             # loss of H2
             [[:H2, :O], [:OH, :H], :(6.34e-12*exp(-4000./T))], # Mike's rate? I believe this based on next 2 lines. ~10^-20 at 200K
-            [[:HD, :O], [:OH, :D], :(4.40e-12*exp(-4390./T))], # added 3/28, rate: NIST. ~10^-21 at 200K
-            [[:HD, :O], [:OD, :H], :(1.68e-12*exp(-4400./T))], # added 3/28, rate: NIST. ~10^-22 at 200K
+            [[:HD, :O], [:OH, :D], :(4.40e-12*exp(-4390./T))], # not in Yung. rate: NIST. ~10^-21 at 200K
+            [[:HD, :O], [:OD, :H], :(1.68e-12*exp(-4400./T))], # not in Yung. rate: NIST. ~10^-22 at 200K
             # HD and H2 exchange
-            [[:H, :HD], [:H2, :D], :(6.31e-11*exp(-4038./T))], # added 3/28, rate: Yung89. NIST rate is from 1959 for 200-1200K.
-            [[:D, :H2], [:HD, :H], :(6.31e-11*exp(-3821./T))], # see previous line. NIST (1986, 200-300K): 8.19e-13*exp(-2700/T)
+            [[:H, :HD], [:H2, :D], :(6.31e-11*exp(-4038./T))], # rate: Yung89. NIST rate is from 1959 for 200-1200K.
+            [[:D, :H2], [:HD, :H], :(6.31e-11*exp(-3821./T))], # NIST (1986, 200-300K): 8.19e-13*exp(-2700/T)
 
-            ## OH + H2 -- SOMETHING FUNNY GOING ON HERE***
+            ## OH + H2
             [[:OH, :H2], [:H2O, :H], :(2.8e-12*exp(-1800./T))], # Sander2011. Yung89: 5.5e-12*exp(-2000/T). KIDA: 7.7E-12*exp(-2100/T). old rate from Mike: 9.01e-13*exp(-1526/T)
             [[:OH, :HD], [:HDO, :H], :((3./20.)*2.8e-12*exp(-1800./T))], # Yung88: rate (3/20)*H-ana. Sander2011: 5e-12*exp(-2130./T)
             [[:OH, :HD], [:H2O, :D], :((3./20.)*2.8e-12*exp(-1800./T))], # see prev line
@@ -235,8 +234,8 @@ reactionnet = [   #Photodissociation
             [[:H, :D, :M], [:HD, :M], :(1.6e-32*(298./T)^2.27)], # Yung88: rate same as H-ana.
 
             [[:H, :OH, :CO2], [:H2O, :CO2], :(1.9*6.8e-31*(300./T)^2)], # Can't find in databases. Mike's rate.
-            [[:H, :OD, :CO2], [:HDO, :CO2], :(1.9*6.8e-31*(300./T)^2)], # added 3/13 with assumed rate
-            [[:D, :OH, :CO2], [:HDO, :CO2], :(1.9*6.8e-31*(300./T)^2)], # added 3/13 with assumed rate
+            [[:H, :OD, :CO2], [:HDO, :CO2], :(1.9*6.8e-31*(300./T)^2)], # not in Yung88. assumed rate
+            [[:D, :OH, :CO2], [:HDO, :CO2], :(1.9*6.8e-31*(300./T)^2)], # not in Yung88. assumed rate
 
             ## H + HO2
             [[:H, :HO2], [:OH, :OH], :(7.2e-11)], # Sander2011. Indep of T for 245<T<300
@@ -244,19 +243,19 @@ reactionnet = [   #Photodissociation
             [[:H, :HO2], [:H2O, :O1D], :(1.6e-12)], # O1D is theoretically mandated
             [[:H, :DO2], [:OH, :OD], :(7.2e-11)], # Yung88: rate same as H-ana. verified Yung89 3/28/18
             [[:H, :DO2], [:HD, :O2], :(0.5*6.9e-12)], # Yung88: rate same as H-ana. verified Yung89 3/28/18
-            [[:H, :DO2], [:HDO, :O1D], :(1.6e-12)], # Yung88: rate same as H-ana. verified Yung89 3/28/18
+            [[:H, :DO2], [:HDO, :O1D], :(1.6e-12)], # Yung88: rate same as H-ana. verified Yung89 3/28/18. Yung88 has this as yielding HDO and O, not HDO and O1D
             [[:D, :HO2], [:OH, :OD], :(0.71*7.2e-11)], # Yung88: rate 0.71*H-ana (assumed). verified Yung89 3/28/18 (base: 7.05, minor disagreement)
             [[:D, :HO2], [:HD, :O2], :(0.71*0.5*6.9e-12)], # Yung88: rate 0.71*H-ana (assumed). verified Yung89 3/28/18 (base 7.29, minor disagreement)
             [[:D, :HO2], [:HDO, :O1D], :(0.71*1.6e-12)], # Yung88: rate 0.71*H-ana (assumed). Changed to O1D to match what Mike put in 3rd line from top of this section.
-            [[:H, :DO2], [:HO2, :D], :(1e-10/(0.54*exp(890./T)))], # Yung88  (assumed)
-            [[:D, :HO2], [:DO2, :H], :(1.0e-10)], # verified Yung89 3/28/18
+            [[:H, :DO2], [:HO2, :D], :(1e-10/(0.54*exp(890./T)))], # Yung88  (assumed) - turn off for Case 2
+            [[:D, :HO2], [:DO2, :H], :(1.0e-10)], # Yung88. verified Yung89 3/28/18 - turn off for Case 2
 
             ## H + H2O2. deuterated analogues added 3/29
             [[:H, :H2O2], [:HO2, :H2],:(2.81e-12*exp(-1890./T))], # verified NIST 4/3/18. Only valid for T>300K. No experiment for lower.
-            # [[:H, :HDO2], [:DO2,:H2], :(0.5*1.16E-11*exp(-2110./T))], # Cazaux2010: BR = 0
-            # [[:H, :HDO2], [:HO2,:HD], :(0.5*1.16E-11*exp(-2110./T))], # Cazaux2010: BR = 0
-            # [[:D, :H2O2], [:DO2,:H2], :(0.5*1.16E-11*exp(-2110./T))], # Cazaux2010: BR = 0
-            # [[:D, :H2O2], [:HO2,:HD], :(0.5*1.16E-11*exp(-2110./T))], # Cazaux2010: BR = 0
+            [[:H, :HDO2], [:DO2,:H2], :(0)], # Cazaux2010: BR = 0
+            [[:H, :HDO2], [:HO2,:HD], :(0)], # Cazaux2010: BR = 0
+            [[:D, :H2O2], [:DO2,:H2], :(0)], # Cazaux2010: BR = 0
+            [[:D, :H2O2], [:HO2,:HD], :(0)], # Cazaux2010: BR = 0
             [[:H, :H2O2], [:H2O, :OH],:(1.7e-11*exp(-1800./T))], # verified NIST 4/3/18
             [[:H, :HDO2], [:HDO,:OH], :(0.5*1.16E-11*exp(-2110./T))], # Cazaux2010: BR = 0.5. Rate for D + H2O2, valid 294<T<464K, NIST, 4/3/18
             [[:H, :HDO2], [:H2O,:OD], :(0.5*1.16E-11*exp(-2110./T))], # see previous line
@@ -289,7 +288,7 @@ reactionnet = [   #Photodissociation
             [[:OH, :OH], [:H2O, :O], :(4.2e-12*exp(-240./T))], # NIST+KIDA, 200-350K: 6.2e-14*(T/300)^2.62*exp(945./T) changed 4/3/18. Yung89: 4.2e-12*exp(-240/T). old rate w/mystery origin: 1.8e-12.
             [[:OD, :OH], [:HDO, :O], :(4.2e-12*exp(-240./T))], # Yung88: rate same as H-ana
             [[:OH, :OH], [:H2O2], threebody(:(1.3*6.9e-31*(T/300.)^-1.0),:(2.6e-11))], # Sander2011. Why 1.3?
-            [[:OD, :OH], [:HDO2], threebody(:(1.3*6.9e-31*(T/300.)^-1.0),:(2.6e-11))], # Yung88: rate same as H-ana *** 1 of 2 possibilities for what makes HDO2 rocket up
+            [[:OD, :OH], [:HDO2], threebody(:(1.3*6.9e-31*(T/300.)^-1.0),:(2.6e-11))], # Yung88: rate same as H-ana
             ## OH + O3
             [[:OH, :O3], [:HO2, :O2], :(1.7e-12*exp(-940./T))], # Sander2011, temp by NIST 220-450K. Yung89: 1.6 not 1.7 -> temp 200-300K by NIST (older info)
             [[:OD, :O3], [:DO2, :O2], :(1.7e-12*exp(-940./T))], # Yung88: rate same as H-ana
@@ -308,13 +307,14 @@ reactionnet = [   #Photodissociation
             [[:DO2, :O3], [:OD, :O2, :O2], :(1.0e-14*exp(-490./T))], # Yung88: same as H-ana (assumed)
             ## HO2 + HO2
             [[:HO2, :HO2], [:H2O2, :O2], :(3.0e-13*exp(460./T))], # Sander2011. Yung89: 2.3e-13*exp(600/T). KIDA 230-420K: 2.2e-13*exp(600/T)
-            [[:DO2, :HO2], [:HDO2, :O2], :(3.0e-13*exp(460./T))], # Yung88: same as H-ana (assumed) *** 1 of 2 possibilities for what makes HDO2 rocket up
-            [[:HO2, :HO2, :M], [:H2O2, :O2, :M], :(2*2.1e-33*exp(920./T))], # Sander2011. ***why factor of 2?
+            [[:DO2, :HO2], [:HDO2, :O2], :(3.0e-13*exp(460./T))], # Yung88: same as H-ana (assumed)
+            # *** why do we have he next two reactions? I forgot...
+            [[:HO2, :HO2, :M], [:H2O2, :O2, :M], :(2*2.1e-33*exp(920./T))], # Sander2011.
             [[:HO2, :DO2, :M], [:HDO2, :O2, :M], :(2*2.1e-33*exp(920./T))], # added 3/13 with assumed same rate as H analogue
 
             ## OH + D or OD + H (no non-deuterated analogues)
-            [[:OD, :H], [:OH, :D], :(3.3e-9*(T^-0.63)/(0.72*exp(717./T)))], # Yung88 - estimation! NIST (Howard82): 5.25E-11*(T/298)^-0.63
-            [[:OH, :D], [:OD, :H], :(3.3e-9*T^-0.63)], # Yung88
+            [[:OD, :H], [:OH, :D], :(3.3e-9*(T^-0.63)/(0.72*exp(717./T)))], # rate: Yung88. NIST (Howard82): 5.25E-11*(T/298)^-0.63  - turn off for Case 2
+            [[:OH, :D], [:OD, :H], :(3.3e-9*T^-0.63)], # Yung88  - turn off for Case 2
 
             # CO2 recombination due to odd H (with HOCO intermediate)
             ## straight to CO2
@@ -322,13 +322,13 @@ reactionnet = [   #Photodissociation
             [[:CO, :OD], [:CO2, :D], threebodyca(:(1.5e-13*(T/300.)^0.6),:(2.1e9*(T/300.)^6.1))], # Yung88: same as H-ana.
             ### possible deuterated analogues below
             [[:OH, :CO], [:HOCO], threebody(:(5.9e-33*(T/300.)^-1.4),:(1.1e-12*(T/300.)^1.3))], # Sander2011
-            [[:OD,:CO], [:DOCO], threebody(:(5.9e-33*(T/300.)^-1.4),:(1.1e-12*(T/300.)^1.3))],
+            [[:OD, :CO], [:DOCO], threebody(:(5.9e-33*(T/300.)^-1.4),:(1.1e-12*(T/300.)^1.3))],
 
             [[:HOCO, :O2], [:HO2, :CO2], :(2.09e-12)], # verified NIST 4/3/18
-            [[:DOCO, :O2], [:DO2,:CO2], :(2.09e-12)],
+            [[:DOCO, :O2], [:DO2,:CO2], :(2.09e-12)],  # assumed?
 
             # CO2+ attack on molecular hydrogen
-            [[:CO2pl, :H2], [:CO2, :H, :H], :(8.7e-10)], # where does this come from
+            [[:CO2pl, :H2], [:CO2, :H, :H], :(8.7e-10)], # from Kras 2010 / Scott 1997
             [[:CO2pl, :HD], [:CO2pl, :H, :D], :((2/5)*8.7e-10)],
             ];
 ################################################################################
@@ -408,6 +408,26 @@ function Tpiecewise(z::Float64, Tinf=240.0, Ttropo=125.0, lapserate=-1.4e-5, ztr
     end
 end
 
+function Tco2(z, co2_col, Ttropo, Texo)
+    #=
+    co2_col: the CO2 population data for a column in the atmosphere from surface to top (200 km)
+    =#
+    lapserate=-1.4e-5
+    ztropo = 90e5
+    ztropowidth = 30e5
+    zindex = Int(z / 2e5)
+    overhead_co2 = sum(co2_col[zindex+1:end])
+
+    if z >= ztropo - ztropowidth
+        return Ttropo + (Texo - Ttropo)*exp(-overhead_co2*5e-15)
+    end
+    if ztropo-ztropowidth > z
+        return Ttropo-lapserate*(ztropo-ztropowidth-z)
+    end
+
+    return
+end
+
 #If changes to the temperature are needed, they should be made here
 Temp(z::Float64) = Tpiecewise(z)
 
@@ -439,20 +459,21 @@ end
 ############################# BOUNDARY CONDITIONS ##############################
 ################################################################################
 
-# water saturation vapor pressure, T in K, Psat in mmHg
-# (from Washburn 1924)
-#TODO: Does this need to change for HDO?
-Psat(T::Float64)=10^(-2445.5646/T+8.2312*log10(T)-0.01677006*T+1.20514e-5*T^2-6.757169)
-
-# convert to H2O satuation vapor pressure:
-# 133.3 N/m2 = 1 mmHg, divided by k*T=J=N*m = 1/m3, convert to 1/cm3... 1/cm3 = 10^6/m3
-# H2Osat is an array of H2O SVP in 1/cm^3, a number pressure per volume, by altitude
-H2Osat = map(x->(1e-6*133.3*Psat(x))/(boltzmannK*x),map(Temp, alt))
-H2Osatfrac = H2Osat./map(z->n_tot(n_current, z),alt)
+# CREATE THE WATER AND HDO PROFILES ============================================
+# calculate saturation vapor pressure (SVP). 1st parenthetical is a conversion
+# factor to convert to (#/cm^3) bceause the 2nd parenthetical (from Washburn
+# 1924) gives the value in mmHg. TODO: Does this need to change for HDO?
+Psat(T::Float64) = (133.3/(10^6 * boltzmannK * T))*(10^(-2445.5646/T + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 - 6.757169))
+# H2Osat is an array of H2O SVP in 1/cm^3, a number per volume, by altitude
+H2Osat = map(x->Psat(x), map(Temp, alt))
+HDOsat = H2Osat * DH  # used later in boundary conditions
+H2Osatfrac = H2Osat./map(z->n_tot(n_current, z),alt)  # get SVP as fraction of total atmo
+# set H2O SVP fraction to minimum for all alts above first time min is reached
 H2Oinitfrac = H2Osatfrac[1:findfirst(H2Osatfrac, minimum(H2Osatfrac))]
-H2Oinitfrac = [H2Oinitfrac, fill(minimum(H2Osatfrac),
+H2Oinitfrac = [H2Oinitfrac, fill(minimum(H2Osatfrac), # ensures no supersaturation
                length(alt)-2-length(H2Oinitfrac));]
-H2Oinitfrac[find(x->x<30e5, alt)]=1e-4
+
+H2Oinitfrac[find(x->x<30e5, alt)]=1e-4 # set all values below 30 km to 0.0001
 for i in [1:length(H2Oinitfrac);]
     H2Oinitfrac[i] = H2Oinitfrac[i] < H2Osatfrac[i+1] ? H2Oinitfrac[i] : H2Osatfrac[i+1]
 end
@@ -531,10 +552,8 @@ const speciesbclist=Dict(
                 :CO2=>["n" 2.1e17; "f" 0.],
                 :Ar=>["n" 2.0e-2*2.1e17; "f" 0.],
                 :N2=>["n" 1.9e-2*2.1e17; "f" 0.],
-                :H2O=>["n" H2Osat[1]; "f" 0.], # boundary condition does
-                                              # not matter if H2O is
-                                              # fixed
-                :HDO=>["n" H2Osat[1]; "f" 0.], #TODO: is this right?
+                :H2O=>["n" H2Osat[1]; "f" 0.], # bc doesnt matter if H2O fixed
+                :HDO=>["n" HDOsat[1]; "f" 0.],
                 :O=>["f" 0.; "f" 1.2e8],
                 :H2=>["f" 0.; "v" H2_effusion_velocity],
                 :HD=>["f" 0.; "v" HD_effusion_velocity],
@@ -575,28 +594,44 @@ function Keddy(z::Real, nt::Real)
     z <= 60.e5 ? 10^6 : 2e13/sqrt(nt)
 end
 
-#= molecular diffusion parameters. molecular diffusion is different only
-for small molecules and atoms (H, D, HD, and H2), otherwise all species share
-the same values (Krasnopolsky 1993 <- Hunten 1973; Kras cites Banks & Kockarts,
-but this is actually an incorrect citation.)
-THESE ARE IN cm^-2 s^-2!!! #TODO: are these units right?
+#=
+molecular diffusion parameters. value[1] = A, value[2] = s in the equation
+D = AT^s / n given by Banks & Kockarts Aeronomy part B eqn. 15.30 and Hunten
+1973, Table 1.
+
+molecular diffusion is different only for small molecules and atoms
+(H, D, HD, and H2), otherwise all species share the same values (Krasnopolsky
+1993 <- Hunten 1973; Kras cites Banks & Kockarts, but this is actually an
+incorrect citation.)
+
+D and HD params are estimated by using Banks & Kockarts eqn 15.29 (the
+coefficient on T^0.5/n) to calculate A for H and H2 and D and HD, then using
+(A_D/A_H)_{b+k} = (A_D/A_H)_{hunten} to determine (A_D)_{hunten} since Hunten
+1973 values are HALF what the calculation provides.
+
+s, the power of T, is not calculated because there is no instruction on how to
+do so and is assumed the same as for the hydrogenated species.
+
+THESE ARE IN cm^-2 s^-2!!!
 =#
-# TODO: find correct diffusion params for D, HD so we don't have to use H version
+
 diffparams(species) = get(Dict(:H=>[8.4, 0.597], :H2=>[2.23, 0.75],
-                               :D=>[8.4, 0.597], :HD=>[2.23, 0.75]),
+                               :D=>[5.98, 0.597], :HD=>[1.84, 0.75]),
                                species,[1.0, 0.75])
 function Dcoef(T, n::Real, species::Symbol)
     #=
-    Calculates molecular diffusion coefficient using D = AT^s/n, from Banks
-    and Kockarts Aeronomy, part B, pg 41, eqn 15.30 and table 15.2 footnote
+    Calculates molecular diffusion coefficient for a particular slice of the
+    atmosphere using D = AT^s/n, from Banks and Kockarts Aeronomy, part B,
+    pg 41, eqn 15.30 and table 15.2 footnote
 
     T: temperature
-    n: number concentration of species
+    n: number of molecules (all species) this altitude
     species: whichever species we are calculating for
     =#
     dparms = diffparams(species)
     return dparms[1]*1e17*T^(dparms[2])/n
 end
+# override to use altitude instead of temperature
 Dcoef(z, species::Symbol, n_current) = Dcoef(Temp(z),n_tot(n_current, z),species)
 
 # thermal diffusion factors (from Krasnopolsky 2002)
@@ -1090,10 +1125,10 @@ inactivespecies = intersect(nochemspecies, notransportspecies)
 
 function getrate(chemnet, transportnet, species)
     #=
-    Calculates the rate at which a given species is either produced or lost.
-    Production is from chemical reaction yields or entry from other
-    atmospheric layers. Loss is due to consumption in reactions or migration
-    to other layers.
+    Creates a symbolic expression for the rate at which a given species is
+    either produced or lost. Production is from chemical reaction yields or
+    entry from other atmospheric layers. Loss is due to consumption in reactions
+     or migration to other layers.
     =#
     rate = :(0.0)
     if issubset([species],chemspecies)
@@ -1162,6 +1197,11 @@ end
 end
 
 function reactionrates(n_current)
+    #=
+    Creates an array of size length(intaltgrid) x (number of reactions).
+    Populated with chemical reaction rates for each reaction based on species
+    populations.
+    =#
     theserates = fill(convert(Float64, NaN),(length(intaltgrid),length(reactionnet)))
     for ialt in 1:length(intaltgrid)
         theserates[ialt,:] = reactionrates_local([[n_current[sp][ialt] for sp in specieslist],
@@ -1173,6 +1213,9 @@ function reactionrates(n_current)
 end
 
 function getflux(n_current, dz, species)
+    #=
+    Returns a 1D array of fluxes in and out of a given altitude level for a given species
+    =#
     thesecoefs = [fluxcoefs(a, dz, species, n_current) for a in alt[2:end-1]]
     thesebcs = boundaryconditions(species, dz, n_current)
 
@@ -1494,7 +1537,7 @@ function plotatm(n_current)
     clf()
     for sp in fullspecieslist
         plot(n_current[sp], alt[2:end-1]/1e5, color = speciescolor[sp],
-             linewidth=4, label=sp, linestyle=speciesstyle[sp])
+             linewidth=2, label=sp, linestyle=speciesstyle[sp])
     end
     ylim(0, 200)
     xscale("log")
@@ -1517,7 +1560,7 @@ end
 ################################################################################
 
 # Change following line as needed depending on local machine
-xsecfolder = lead * "Phys/LASP/Mars/chaffincode-working/uvxsect/";
+xsecfolder = lead * "Phys/LASP/chaffincode-working/uvxsect/";
 
 function readandskip(a, delim::Char, T::Type; skipstart=0)
     # function to read in data from a file, skipping zero or more lines at
@@ -1548,22 +1591,24 @@ co2exdata = readandskip(xsecfolder*"binnedCO2e.csv",',',Float64, skipstart = 4)
 # H2O
 h2oxdata = readandskip(xsecfolder*"h2oavgtbl.dat",'\t',Float64, skipstart = 4)
 
-# NEW - HDO crosssection. Data is only provided for 250, 275, 298K.
+# NEW - HDO crosssection. Data is for 298K.
 hdoxdata = readandskip(xsecfolder*"HDO.dat",'\t', Float64, skipstart=4)
-# function hdoxsect(T::Float64) # TODO: maybe delete this, maybe use?
-#     clamp(T, 250, 298)
-#     Tfrac = (T-250)/(298-250)
-#
-#     arr = [hdoxdata[:,1], (1-Tfrac)*hdoxdata[:,2]+Tfrac*hdoxdata[:,3];]
-#     reshape(arr, length(hdoxdata[:,1]),2)
-# end
 
 # H2O2
 # the data in the table cover the range 190-260nm
-h2o2xdata = readandskip(xsecfolder*"H2O2.dat",'\t',Float64, skipstart = 3)
+h2o2xdata = readandskip(xsecfolder*"H2O2.dat",'\t',Float64, skipstart=3)
+# HDO2 STUFF SHOULD GO HERE BUT I DON'T HAVE IT TODO: FIND IT
+# for now: just use H2O2 info.
+hdo2xdata = deepcopy(h2o2xdata) #readandskip(xsecfolder*"HDO2.dat",'\t',Float64, skipstart = 3)
+
 # from 260-350 the following analytic calculation fitting the
 # temperature dependence is recommended:
 function h2o2xsect_l(l::Float64, T::Float64)
+    #=
+    Analytic calculation of H2O2 cross section using temperature dependencies
+    l: wavelength in nm
+    T: temperature in K
+    =#
     l = clamp(l, 260, 350)
     T = clamp(T, 200, 400)
 
@@ -1577,16 +1622,22 @@ function h2o2xsect_l(l::Float64, T::Float64)
 
     expfac = 1.0/(1+exp(-1265/T))
 
-    1e-21*(expfac*reduce(+,map(*,A, lpowA))+(1-expfac)*reduce(+,map(*,B, lpowB)))
+    return 1e-21*(expfac*reduce(+, map(*, A, lpowA))+(1-expfac)*reduce(+, map(*, B, lpowB)))
 end
 
 function h2o2xsect(T::Float64)
+    #=
+    stitches together H2O2 cross sections, some from Sander 2011 table and some
+    from the analytical calculation recommended for 260-350nm recommended by the
+    same.
+    T: temperature in K
+    =#
     retl = h2o2xdata[:,1]
     retx = 1e4*h2o2xdata[:,2]#factor of 1e4 b/c file is in 1/m2
     addl = [260.5:349.5;]
     retl = [retl, addl;]
     retx = [retx, map(x->h2o2xsect_l(x, T),addl);]
-    reshape([retl, retx;],length(retl),2)
+    return reshape([retl, retx;],length(retl),2)
 end
 
 function hdo2xsect(T::Float64)
@@ -1597,11 +1648,6 @@ function hdo2xsect(T::Float64)
     retx = [retx, map(x->h2o2xsect_l(x, T),addl);]
     reshape([retl, retx;],length(retl),2)
 end
-
-# HDO2 STUFF SHOULD GO HERE BUT I DON'T HAVE IT TODO: FIND IT
-# for now: just use H2O2 info.
-hdo2xdata = h2o2xdata #readandskip(xsecfolder*"HDO2.dat",'\t',Float64, skipstart = 3)
-
 
 #Ozone, including IR bands which must be resampled from wavenumber
 o3xdata = readandskip(xsecfolder*"O3.dat",'\t',Float64, skipstart=3)
@@ -1712,7 +1758,7 @@ odxdata = readandskip(xsecfolder*"OD.csv",',',Float64, skipstart=3)
 
 #SOLAR FLUX
 # Change following line as needed depending on local machine
-const solarflux=readandskip(lead*"Phys/LASP/Mars/chaffincode-working/marssolarphotonflux.dat",'\t',Float64,skipstart=4)[1:2000,:]
+const solarflux=readandskip(lead*"Phys/LASP/chaffincode-working/marssolarphotonflux.dat",'\t',Float64,skipstart=4)[1:2000,:]
 solarflux[:,2] = solarflux[:,2]/2
 
 absorber = Dict(:JCO2ion =>:CO2,
@@ -1754,7 +1800,7 @@ function padtosolar(crosssection::Array{Float64, 2})
     positions = map(x->findfirst(solarflux[:,1],x),crosssection[:,1])
     retxsec = fill(0.,length(solarflux[:,1]))
     retxsec[positions] = crosssection[:,2]
-    retxsec
+    return retxsec
 end
 
 function quantumyield(xsect::Array, arr)
@@ -1774,7 +1820,7 @@ function quantumyield(xsect::Array, arr)
         append!(rxs, map(*,map(qefffn, xsect[places, 1]),xsect[places, 2]))
     end
 
-    reshape([lambdas, rxs;],length(lambdas),2)
+    return reshape([lambdas, rxs;],length(lambdas),2)
 end
 
 #build the array of cross-sections
@@ -1792,22 +1838,18 @@ PRODUCTS. In this sense, crosssection has already folded in quantum
 efficiency considerations.
 =#
 
-#now add the cross-sections
+# now add the cross-sections
 
-# CO2 photodissociation =================================================================
-setindex!(crosssection,
-          fill(co2exdata, length(alt)),
-          :JCO2ion)
+# CO2 photodissociation ========================================================
+setindex!(crosssection, fill(co2exdata, length(alt)), :JCO2ion)
 #CO2+hv->CO+O
 setindex!(crosssection,
-          map(xs->quantumyield(xs,((l->l>167, 1),
-                                   (l->95>l, 0.5))), map(t->co2xsect(t),map(Temp, alt))),
-          :JCO2toCOpO)
+          map(xs->quantumyield(xs,((l->l>167, 1), (l->95>l, 0.5))),
+          map(t->co2xsect(t),map(Temp, alt))), :JCO2toCOpO)
 #CO2+hv->CO+O1D
 setindex!(crosssection,
-          map(xs->quantumyield(xs,((l->95<l<167, 1),
-                                   (l->l<95, 0.5))), map(t->co2xsect(t),map(Temp, alt))),
-          :JCO2toCOpO1D)
+          map(xs->quantumyield(xs,((l->95<l<167, 1), (l->l<95, 0.5))),
+          map(t->co2xsect(t),map(Temp, alt))), :JCO2toCOpO1D)
 #O2+hv->O+O
 setindex!(crosssection,
           map(xs->quantumyield(xs,((x->x>175, 1),)), map(t->o2xsect(t),map(Temp, alt))),
@@ -1817,7 +1859,7 @@ setindex!(crosssection,
           map(xs->quantumyield(xs,((x->x<175, 1),)), map(t->o2xsect(t),map(Temp, alt))),
           :JO2toOpO1D)
 
-# O3 photodissociation ==================================================================
+# O3 photodissociation =========================================================
 # The quantum yield of O1D from ozone photolysis is actually
 # well-studied! This adds some complications for processing.
 function O3O1Dquantumyield(lambda, temp)
@@ -1912,38 +1954,27 @@ setindex!(crosssection,
           fill(quantumyield(h2oxdata,((x->true, 0),)),length(alt)),
           :JH2OtoHpHpO)
 
-# TODO: revert all these to hdoxdata after fixing the data
+# TODO: change back to hdoxsect
 # HDO + hν -> H + OD
 setindex!(crosssection,
           fill(quantumyield(hdoxdata,((x->x<145, 0.5*0.89),(x->x>145, 0.5*1))),length(alt)),
           :JHDOtoHpOD)
-          # wrong?: fill(hdoxdata, length(alt)), :JHDOtoHpOD)
-          # double wrong?: map(xs->quantumyield(xs,((x->x<145, 0.5),(x->x>145, 0.5))), # these values are made up
-          # map(t->hdoxsect(t), map(Temp, alt))), :JHDOtoHpOD)
 
 # HDO + hν -> D + OH
 setindex!(crosssection,
           fill(quantumyield(hdoxdata,((x->x<145, 0.5*0.89),(x->x>145, 0.5*1))),length(alt)),
           :JHDOtoDpOH)
-          # wrong?: fill(hdoxdata, length(alt)), :JHDOtoDpOH)
-          # double wrong?: map(xs->quantumyield(xs,((x->x<145, 0.5),(x->x>145, 0.5))), # these values are made up
-          # map(t->hdoxsect(t),map(Temp, alt))), :JHDOtoDpOH)
 
 # HDO + hν -> HD + O1D
 setindex!(crosssection,
           fill(quantumyield(hdoxdata,((x->x<145, 0.11),(x->x>145, 0))),length(alt)),
           :JHDOtoHDpO1D)
-          # wrong?: fill(hdoxdata, length(alt)), :JHDOtoHDpO1D)
-          # double wrong?: map(xs->quantumyield(xs,((x->x<145, 0.5),(x->x>145, 0.5))), # these values are made up
-          # map(t->hdoxsect(t), map(Temp, alt))), :JHDOtoHDpO1D)
 
 # HDO + hν -> H + D + O
 setindex!(crosssection,
           fill(quantumyield(hdoxdata,((x->true, 0),)),length(alt)),
           :JHDOtoHpDpO)
-          # wrong?: fill(hdoxdata, length(alt)), :JHDOtoHpDpO)
-          # double wrong?: map(xs->quantumyield(xs,((x->x<145, 0.5),(x->x>145, 0.5))), # these values are made up
-          # map(t->hdoxsect(t), map(Temp, alt))), :JHDOtoHpDpO)
+
 
 # H2O2 and HDO2 photodissociation =======================================================
 # H2O2+hv->OH+OH
@@ -1981,7 +2012,7 @@ setindex!(crosssection,
           map(xs->quantumyield(xs,((x->true, 0),)), map(t->hdo2xsect(t),
           map(Temp, alt))), :JHDO2toHDOpO1D)
 
-# =======================================================================================
+# ==============================================================================
 lambdas = Float64[]
 for j in Jratelist, ialt in 1:length(alt)
     lambdas = union(lambdas, crosssection[j][ialt][:,1])
@@ -2010,6 +2041,8 @@ function update_Jrates!(n_current::Dict{Symbol, Array{Float64, 1}})
     =#
     #    global solarabs::Array{Array{Float64, 1},1}
 
+    # Initialize an array, length=num of altitude levels - 2.
+    # Each sub-array is an array of length 2000, corresponding to 2000 wavelengths.
     solarabs = Array{Array{Float64}}(length(alt)-2)
     for i in range(1, length(alt)-2)
         solarabs[i] = zeros(Float64, 2000)
@@ -2021,7 +2054,6 @@ function update_Jrates!(n_current::Dict{Symbol, Array{Float64, 1}})
     for jspecies in Jratelist
         species = absorber[jspecies]
 
-        # println(string(jspecies," is absorbed by ",species))
         jcolumn = 0.
         for ialt in [nalt:-1:1;]
             #get the vertical column of the absorbing constituient
@@ -2075,15 +2107,15 @@ end
 
 # Extra code to reach convergence to equilibrium over millions of years
 # STANDARD WATER CASE ----------------------------------------------------------
-# n_current[:H2O] = H2Oinitfrac.*map(z->n_tot(n_current, z),alt[2:end-1])
-# n_current[:HDO] = HDOinitfrac.*map(z->n_tot(n_current, z),alt[2:end-1])
-# [timeupdate(t) for t in [10.0^(1.0*i) for i in -3:14]]
-# for i in 1:100
-#     # plotatm()
-#     # println("dt: ", mytime)
-#     update!(n_current, 1e14)
-# end
-# write_ncurrent(n_current,"converged_standardwater_D.h5")
+n_current[:H2O] = H2Oinitfrac.*map(z->n_tot(n_current, z),alt[2:end-1])
+n_current[:HDO] = HDOinitfrac.*map(z->n_tot(n_current, z),alt[2:end-1])
+[timeupdate(t) for t in [10.0^(1.0*i) for i in -3:14]]
+for i in 1:100
+    # plotatm()
+    # println("dt: ", mytime)
+    update!(n_current, 1e14)
+end
+write_ncurrent(n_current,"converged_standardwater_D_reproYung.h5")
 
 # HIGH WATER CASE --------------------------------------------------------------
 # n_current[:H2O]=detachedlayer.*map(z->n_tot(n_current, z),alt[2:end-1])

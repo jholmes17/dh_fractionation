@@ -1,12 +1,28 @@
 ## run_and_plot.jl --- routines to run the coupled photochemistry model
 ## to produce model output useful for a 2016 photochemistry paper
 
+arg_from_rnp = Any[ARGS[i] for i in 1:1:length(ARGS)] # get the args from command line
+@eval @everywhere arg_from_rnp=$arg_from_rnp
+if arg_from_rnp[1] == "temp"
+    extfn = "temp_$(arg_from_rnp[2])_$(arg_from_rnp[3])_$(arg_from_rnp[4])"
+elseif arg_from_rnp[1] == "water"
+    extfn = "water_$(arg_from_rnp[2])"
+end
+@eval @everywhere extfn=$extfn
+@everywhere include("setup_photochemistry_anavaryTW.jl") # TODO: change as needed
 @everywhere @time update!(n_current,0.)
 
 # Run the simulation with logarithmic time steps
 @everywhere timepts = logspace(log10(1),log10(1e7*3.14e7),1000)
 @everywhere timediff = timepts[2:end]-timepts[1:end-1]
 @everywhere append!(timediff,3.3e6*3.14e7*ones(Float64,300))
+
+# identify the converged test case file TODO: fix all this as needed
+lead = "/data/GoogleDrive/"#"/home/emc/GoogleDrive/"#
+dataloc = "/data/VaryTW_Ana/"
+# readfile = lead*"Phys/LASP/chaffincode-working/"*extfn*"/converged_standardwater_D_"*extfn*".h5"
+readfile = dataloc*extfn*"/converged_standardwater_D_"*extfn*".h5"
+println("ALERT: Using file: ", readfile)
 
 # water ppm of 20, 40, 60, 80 each tested at altitudes 20, 40, 60, 80, 120
 # set up the pairings and some filenames
@@ -15,7 +31,7 @@ hdoppmvec = waterppmvec * DH
 wateraltvec = [20 40 60 80 100 120]
 parmsvec = [[a,b] for a in waterppmvec, b in wateraltvec]
 parmsvec = reshape(parmsvec,length(parmsvec))
-filenamevec=[string("./ppm_",a[1],"_alt_",a[2],".h5") for a in parmsvec]
+filenamevec=[string(dataloc*extfn*"/ppm_",a[1],"_alt_",a[2],".h5") for a in parmsvec]
 
 @everywhere function runwaterprofile(n_current, ppmadd, peakalt, dtlist, filename)\
     #=
@@ -37,7 +53,7 @@ filenamevec=[string("./ppm_",a[1],"_alt_",a[2],".h5") for a in parmsvec]
 
     # modify the water profile stored in n_internal with "gaussian" packet
     waterppm = 1e-6*map(x->ppmadd.*exp(-((x-peakalt)/12.5)^2),alt[2:end-1]/1e5)+H2Oinitfrac
-    waterprofile=waterppm.*map(z->n_tot(n_internal,z),alt[2:end-1])
+    waterprofile = waterppm.*map(z->n_tot(n_internal,z),alt[2:end-1])
     n_internal[:H2O] = waterprofile
 
     # modify the HDO profile stored in n_internal with "gaussian" packet
@@ -45,9 +61,6 @@ filenamevec=[string("./ppm_",a[1],"_alt_",a[2],".h5") for a in parmsvec]
     hdoppm = 1e-6*map(x->ppmadd_HDO.*exp(-((x-peakalt)/12.5)^2),alt[2:end-1]/1e5)+HDOinitfrac
     hdoprofile=hdoppm.*map(z->n_tot(n_internal,z),alt[2:end-1])
     n_internal[:HDO] = hdoprofile
-
-    #println("The plot is for $(ppmadd) and alt $(peakalt)")
-    #plotatm(n_internal)
 
     println("About to run the $(ppmadd) ppm and $(peakalt) alt profile")
     result = runprofile(n_internal, dtlist, filename)
@@ -96,9 +109,7 @@ end
         for dt in dtlist
             #println(filename*": iteration = "* string(thisi+=1)*" "*Libc.strftime(time()))
             thisi += 1
-            #println("dt = "* string(dt::Float64))
             elapsed_time+=dt
-            #println("elapsed_time = "*string(elapsed_time))
             ##n_old=deepcopy(n_internal)  #TODO: what's this line? remove it?
 
             # where the action happens - update n_internal for new timesteps
@@ -149,11 +160,13 @@ end
     # Calculate the total H flux: sum of (H population @ 200 km) * (H flux rate)
     # and (H_2 population @ 200 km) * (H_2 flux rate )
     Hfluxes[1] = (n_current[:H][end]*speciesbcs(:H)[2,2]
-                  + 2*n_current[:H2][end]*speciesbcs(:H2)[2,2]) # added 2 to account for number of H
+                  + 2*n_current[:H2][end]*speciesbcs(:H2)[2,2]
+                  + n_current[:HD][end]*speciesbcs(:HD)[2,2])
     for i in 1:(timelength-1)
         n_current=read_ncurrent_from_file(readfile,string("n_current/iter_",i))
         Hfluxes[i+1]=(n_current[:H][end]*speciesbcs(:H)[2,2]
-                      +2*n_current[:H2][end]*speciesbcs(:H2)[2,2])
+                      + 2*n_current[:H2][end]*speciesbcs(:H2)[2,2]
+                      + n_current[:HD][end]*speciesbcs(:HD)[2,2])
     end
     return Hfluxes
 end
@@ -194,18 +207,20 @@ end
     HDfluxes = fill(0.,timelength)
     n_current = read_ncurrent_from_file(readfile,string("n_current/init"))
 
-    # Calculate the total H,D flux: sum of (H population @ 200 km) * (H flux rate)
+    # Calculate the total H+D flux: sum of (H population @ 200 km) * (H flux rate)
     # and (H_2 population @ 200 km) * (H_2 flux rate), and deuterated species
-    HDfluxes[1] = (n_current[:H][end]*speciesbcs(:H)[2,2]
-                  + 2*n_current[:H2][end]*speciesbcs(:H2)[2,2]
-                  + n_current[:D][end]*speciesbcs(:D)[2,2]
-                  + 2*n_current[:HD][end]*speciesbcs(:HD)[2,2])
+    HDfluxes[1] = (n_current[:H][end]*speciesbcs(:H)[2,2]       # H
+                  + 2*n_current[:H2][end]*speciesbcs(:H2)[2,2]  # H
+                  + n_current[:HD][end]*speciesbcs(:HD)[2,2]    # H
+                  + n_current[:D][end]*speciesbcs(:D)[2,2]      # D
+                  + n_current[:HD][end]*speciesbcs(:HD)[2,2]) # D
     for i in 1:(timelength-1)
         n_current=read_ncurrent_from_file(readfile,string("n_current/iter_",i))
         HDfluxes[i+1] = (n_current[:H][end]*speciesbcs(:H)[2,2]
                       + 2*n_current[:H2][end]*speciesbcs(:H2)[2,2]
+                      + n_current[:HD][end]*speciesbcs(:HD)[2,2]
                       + n_current[:D][end]*speciesbcs(:D)[2,2]
-                      + 2*n_current[:HD][end]*speciesbcs(:HD)[2,2])
+                      + n_current[:HD][end]*speciesbcs(:HD)[2,2])
     end
     return HDfluxes
 end
@@ -242,33 +257,44 @@ end
     return
 end
 
+# Functions to retrieve water profiles
+function get_water_ppm(filename)
+    n_file = read_ncurrent_from_file(filename,"n_current/init")
+    waterppmvec = 1e6*n_file[:H2O]./map(z->n_tot(n_file,z),alt[2:end-1])
+    return waterppmvec
+end
+
+function get_hdo_ppm(filename)
+    n_file = read_ncurrent_from_file(filename,"n_current/init")
+    hdoppmvec = 1e6*n_file[:HDO]./map(z->n_tot(n_file,z),alt[2:end-1])
+    return hdoppmvec
+end
+
 pmap(x->println(string("parmsvec[i][1]=",x[1],", parmsvec[i][2]=",x[2],",
      filename=",x[3])),[[p,f;] for (p,f) in zip(parmsvec,filenamevec)])
-
-lead = "/data/GoogleDrive/"#"/home/emc/Google Drive/"#
-readfile = lead*"Phys/LASP/Mars/chaffincode-working/converged_standardwater_D.h5"
-println("ALERT: Using file: ", readfile)
 
 # This runs the simulation for a year and returns
 oneyeartimepts = logspace(log10(1),log10(3.14e7),1000)
 oneyeartimediff = oneyeartimepts[2:end]-oneyeartimepts[1:end-1]
 n_converged = get_ncurrent(readfile)
 
-# println("running sim for one year")
-# oneyearfn = "one_year_response_to_80ppm_at_60km.h5"
-# n_oneyear = runwaterprofile(n_converged, 80, 60, oneyeartimediff, oneyearfn)
-#
-# println("now removing the water")
-# returnfn = "one_year_response_to_80ppm_at_60km_return.h5"
-# n_return = runwaterprofile(n_oneyear, 0., 60, oneyeartimediff, returnfn)
+# Add water / run for a year / remove water / run for a year ===================
+println("running sim for one year")
+oneyearfn = dataloc*extfn*"/one_year_response_to_80ppm_at_60km.h5"
+n_oneyear = runwaterprofile(n_converged, 80, 60, oneyeartimediff, oneyearfn)
 
-println("Now doing water profiles")
+println("now removing the water")
+returnfn = dataloc*extfn*"/one_year_response_to_80ppm_at_60km_return.h5"
+n_return = runwaterprofile(n_oneyear, 0., 60, oneyeartimediff, returnfn)
+
+# Add water and run for just over a year, no removal ===========================
 # This runs the simulation for all added ppms and altitudes
+println("Now doing water profiles")
 pmap(x->runwaterprofile(n_current,x[1],x[2],timediff,x[3]),[[p,f;] for (p,f) in zip(parmsvec,filenamevec)])
 println("Finished with water profiles")
 pmap(get_all_rates_and_fluxes,filenamevec)
 
-# Obtain the hydrogen (or H+D) flux due to different ppm at different altitudes
+# Calculate H, D, H+D flux at exobase due to each experiment ===================
 println("Doing H fluxes")
 Hfluxes = pmap(get_H_fluxes,filenamevec)
 lhfl = length(Hfluxes[1,1])
@@ -299,19 +325,7 @@ for lp in 1:length(parmsvec)
     writeHDfluxes[ippm,ialt,:] = [parmsvec[lp],HDfluxes[lp];]
 end
 
-# Obtain the water profiles
-function get_water_ppm(filename)
-    n_file = read_ncurrent_from_file(filename,"n_current/init")
-    waterppmvec = 1e6*n_file[:H2O]./map(z->n_tot(n_file,z),alt[2:end-1])
-    return waterppmvec
-end
-
-function get_hdo_ppm(filename)
-    n_file = read_ncurrent_from_file(filename,"n_current/init")
-    hdoppmvec = 1e6*n_file[:HDO]./map(z->n_tot(n_file,z),alt[2:end-1])
-    return hdoppmvec
-end
-
+# Calculate the water profiles =================================================
 waterprofs = map(get_water_ppm,filenamevec)
 writewaterprof = fill(0.0,(length(waterppmvec),length(wateraltvec),length(alt)-2+2))
 hdoprofs = map(get_hdo_ppm,filenamevec)
@@ -324,50 +338,30 @@ for lp in 1:length(parmsvec)
 end
 
 
-# H, D, H+D ESCAPE FLUX HISTORY ================================================
-# Write out the file with hydrogen fluxes
+# WRITE OUT H, D, H+D ESCAPE FLUX HISTORY ======================================
 println("Writing H esc file")
-hfile = "./H_esc_flux_history.h5"
-# if isfile(hfile)==true
-# elseif isfile(hfile)==false
-#     h5write(hfile,"fluxes/fluxvals",writeHfluxes)
-#     h5write(hfile,"fluxes/times",h5read("./ppm_20_alt_20.h5","n_current/timelist"))
-#     h5write(hfile,"waterprofs/ppm",writewaterprof)
-#     h5write(hfile,"waterprofs/alt",alt[2:end-1])
-# end
-# ORIGINAL STUFF:
+hfile = dataloc*extfn*"/H_esc_flux_history.h5"
 h5open(hfile, isfile(hfile) ? "r+" : "w") do file
    write(file,"fluxes/fluxvals",writeHfluxes)
-   write(file,"fluxes/times",h5read("./ppm_20_alt_20.h5","n_current/timelist"))
+   write(file,"fluxes/times",h5read(dataloc*extfn*"/ppm_20_alt_20.h5","n_current/timelist"))
    write(file,"waterprofs/ppm",writewaterprof)
    write(file,"waterprofs/alt",alt[2:end-1])
 end
 
-
-#
-# write out just the D fluxes
 println("Writing D esc file")
-hfile = "./D_esc_flux_history.h5"
-# if isfile(hfile)==true
-# elseif isfile(hfile)==false
-#     h5write(hfile,"fluxes/fluxvals",writeDfluxes)
-#     h5write(hfile,"fluxes/times",h5read("./ppm_20_alt_20.h5","n_current/timelist"))
-#     h5write(hfile,"hdoprofs/ppm",writehdoprof)
-#     h5write(hfile,"waterprofs/alt",alt[2:end-1])
-# end
+hfile = dataloc*extfn*"/D_esc_flux_history.h5"
 h5open(hfile, isfile(hfile) ? "r+" : "w") do file
    write(file,"fluxes/fluxvals",writeDfluxes)
-   write(file,"fluxes/times",h5read("./ppm_20_alt_20.h5","n_current/timelist"))
+   write(file,"fluxes/times",h5read(dataloc*extfn*"/ppm_20_alt_20.h5","n_current/timelist"))
    write(file,"hdoprofs/ppm",writehdoprof)
    write(file,"waterprofs/alt",alt[2:end-1])
 end
 
-# Write out the file with hydrogen + deuterium fluxes
 println("Writing H+D esc file")
-hdfile = "./H_and_D_esc_flux_history.h5"
+hdfile = dataloc*extfn*"/H_and_D_esc_flux_history.h5"
 h5open(hdfile, isfile(hdfile) ? "r+" : "w") do file
    write(file,"fluxes/fluxvals",writeHDfluxes)
-   write(file,"fluxes/times",h5read("./ppm_20_alt_20.h5","n_current/timelist"))
+   write(file,"fluxes/times",h5read(dataloc*extfn*"/ppm_20_alt_20.h5","n_current/timelist"))
    write(file,"waterprofs/ppm",writewaterprof)
    write(file, "hdoprofs/ppm", writehdoprof)
    write(file,"waterprofs/alt",alt[2:end-1])
