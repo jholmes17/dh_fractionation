@@ -644,26 +644,6 @@ HDOinitfrac = H2Oinitfrac * DH  # initial profile for HDO
 detachedlayer = 1e-6*map(x->80.*exp(-((x-60)/12.5)^2),alt[2:end-1]/1e5)+H2Oinitfrac
 detachedlayer_HDO = detachedlayer * DH
 
-# Plot initial water profile with detatched layer - uncomment as needed
-# clf()
-# semilogx(H2Oinitfrac/1e-6, alt[2:end-1]/1e5, color="blue",linewidth=5,
-#          label=L"$H_2O$ base")
-# semilogx(detachedlayer/1e-6, alt[2:end-1]/1e5, color="red",linewidth=2,
-#          linestyle="--", label=L"enhanced $H_2O$")
-# semilogx(HDOinitfrac/1e-6, alt[2:end-1]/1e5, color="navy", linewidth=5,
-#          label=L"$HDO$ base")
-# semilogx(detachedlayer_HDO/1e-6, alt[2:end-1]/1e5, color="darkred", linewidth=2,
-#          linestyle="--", label=L"enhanced $HDO$")
-# xlabel("Volume Mixing Ratio [ppm]", fontsize=18)
-# ylabel("Altitude [km]", fontsize=18)
-# title(L"$H_2O$ and HDO model profiles", fontsize=20)
-# text(0.08, 59, "0.07ppm", color="darkred", size=16)
-# text(5, 57, "80ppm", color="red", size=16)
-# ax = gca()
-# ax[:tick_params]("both",labelsize=16)
-# legend(fontsize=14)
-# show()
-
 # this computes the total water column in precipitable microns
 # n_col(molecules/cm2)/(molecules/mol)*(gm/mol)*(1cc/gm) = (cm)*(10^4μm/cm)
 # = precipitable μm
@@ -693,7 +673,6 @@ function speciesbcs(species)
         species,
         ["f" 0.; "f" 0.])
 end
-
 
 H_effusion_velocity = effusion_velocity(Temp(zmax),1.0)
 H2_effusion_velocity = effusion_velocity(Temp(zmax),2.0)
@@ -2129,31 +2108,19 @@ println("Wrote $(towrite)")
 savefig(experimentdir*extfn*"/converged_"*extfn*".png")
 println("Saved figure to same folder")
 
-# logging
-towrite1 = "Converged file for $(argarray[1]) experiment with values: \n"
-if argarray[1]=="temp"
-    towrite2 = "T_0 = $(argarray[2]), T_tropo = $(argarray[3]), T_exo = $(argarray[4]), water init = 1e-4"
-elseif argarray[1]=="water"
-    towrite2 = "T_0 = 209, T_tropo = 125, T_exo = 240, water init = $(argarray[2])"
-end
-f = open(experimentdir*extfn*"convergence_"*extfn*".txt", "w")
-write(f, towrite1)
-write(f, towrite2)
-close(f)
-
-println("ALERT: end convergeit_anavaryTW")
-
 ################################################################################
 ################################# LOGGING ######################################
 ################################################################################
 
-towrite = "Finished simulation for $(argarray[1]) experiment with values: \n"
+towrite = "Finished convergence for $(argarray[1]) experiment with values: \n"
 if argarray[1]=="temp"
     towrite2 = "T_0 = $(argarray[2]), T_tropo = $(argarray[3]), T_exo = $(argarray[4]), water init = 1e-4"
 elseif argarray[1]=="water"
     towrite2 = "T_0 = 209, T_tropo = 125, T_exo = 240, water init = $(argarray[2])"
 end
-f = open(experimentdir*"convergence_"*extfn*".txt", "w")
+f = open(experimentdir*extfn*"/convergence_"*extfn*".txt", "w")
 write(f, towrite)
 write(f, towrite2)
 close(f)
+
+println("ALERT: Finished convergence for $(argarray[1])")

@@ -213,6 +213,9 @@ const mH = 1.67e-27;            # kg
 const marsM = 0.1075*5.972e24;  # kg
 const radiusM = 3396e5;         # cm
 
+# General D/H ratio for mars, 5.5*SMOW, Atmosphere & Climate of Mars 2017
+DH = 5.5 * 1.6e-4        # SMOW value from Yung 1988
+
 # array of symbols for each species
 const fullspecieslist = [:CO2, :O2, :O3, :H2, :OH, :HO2, :H2O, :H2O2, :O, :CO,
                          :O1D, :H, :N2, :Ar, :CO2pl, :HOCO,
@@ -491,41 +494,6 @@ reactionnet = [   #Photodissociation
              [[:CO2pl, :HD], [:CO2pl, :H, :D], :((2/5)*8.7e-10)],
              ];
 
-################################################################################
-############################ ADD DEUTERATED SPECIES ############################
-################################################################################
-
-#=
-THIS SECTION ADDS NEW SPECIES AND J RATES TO THE CODEBASE.
-Uncomment this section to add new species in the style shown below. Comment it
-out when running the simulation without adding new species (most of the time).
-=#
-
-# General D/H ratio for mars, 5.5*SMOW, Atmosphere & Climate of Mars 2017
-DH = 5.5 * 1.6e-4        # SMOW value from Yung 1988
-# # modify n_current
-# n_current[:HDO] = n_current[:H2O] * DH
-# n_current[:OD] = n_current[:OH] * DH
-# n_current[:HDO2] = n_current[:H2O2] * DH
-# n_current[:D] = n_current[:H] * DH
-# n_current[:DO2] = n_current[:HO2] * DH
-# n_current[:HD] = n_current[:H2] * DH
-# n_current[:DOCO] = n_current[:HOCO] * DH
-#
-# # add the new Jrates --the values will get populated automatically
-# n_current[:JHDOtoHpOD] = 0.0 * ones(length(alt))
-# n_current[:JHDOtoDpOH] = 0.0 * ones(length(alt))
-# n_current[:JHDO2toOHpOD] = 0.0 * ones(length(alt))
-# n_current[:JHDOtoHDpO1D] = 0.0 * ones(length(alt)) # NEW 3/28
-# n_current[:JHDOtoHpDpO] = 0.0 * ones(length(alt)) # NEW 3/28
-# n_current[:JODtoOpD] = 0.0 * ones(length(alt)) # NEW 3/28
-# n_current[:JHDtoHpD] = 0.0 * ones(length(alt)) # NEW 3/29
-# n_current[:JDO2toODpO] = 0.0 * ones(length(alt)) # NEW 3/29
-# n_current[:JHDO2toDO2pH] = 0.0 * ones(length(alt)) # NEW 3/30
-# n_current[:JHDO2toHO2pD] = 0.0 * ones(length(alt)) # NEW 3/30
-# n_current[:JHDO2toHDOpO1D] =  0.0 * ones(length(alt)) # NEW 3/30
-# n_current[:JODtoO1DpD]  =  0.0 * ones(length(alt)) # NEW 3/30
-
 
 ################################################################################
 ####################### TEMPERATURE/PRESSURE PROFILES ##########################
@@ -638,23 +606,24 @@ detachedlayer = 1e-6*map(x->80.*exp(-((x-60)/12.5)^2),alt[2:end-1]/1e5)+H2Oinitf
 detachedlayer_HDO = detachedlayer * DH
 
 # Plot initial water profile with detatched layer - uncomment as needed
-# clf()
-# semilogx(H2Oinitfrac/1e-6, alt[2:end-1]/1e5, color="blue",linewidth=5,
-#          label=L"$H_2O$ base")
-# semilogx(detachedlayer/1e-6, alt[2:end-1]/1e5, color="red",linewidth=2,
-#          linestyle="--", label=L"enhanced $H_2O$")
-# semilogx(HDOinitfrac/1e-6, alt[2:end-1]/1e5, color="navy", linewidth=5,
-#          label=L"$HDO$ base")
-# semilogx(detachedlayer_HDO/1e-6, alt[2:end-1]/1e5, color="darkred", linewidth=2,
-#          linestyle="--", label=L"enhanced $HDO$")
-# xlabel("Volume Mixing Ratio [ppm]", fontsize=18)
-# ylabel("Altitude [km]", fontsize=18)
-# title(L"$H_2O$ and HDO model profiles", fontsize=20)
-# text(0.08, 59, "0.07ppm", color="darkred", size=16)
-# text(5, 57, "80ppm", color="red", size=16)
-# ax = gca()
-# ax[:tick_params]("both",labelsize=16)
-# legend(fontsize=14)
+clf()
+semilogx(H2Oinitfrac/1e-6, alt[2:end-1]/1e5, color="blue", linewidth=5,
+         label=L"$H_2O$ base")
+semilogx(detachedlayer/1e-6, alt[2:end-1]/1e5, color="red", linewidth=2,
+         linestyle="--", label=L"enhanced $H_2O$")
+semilogx(HDOinitfrac/1e-6, alt[2:end-1]/1e5, color="navy", linewidth=5,
+         label=L"$HDO$ base")
+semilogx(detachedlayer_HDO/1e-6, alt[2:end-1]/1e5, color="darkred", linewidth=2,
+         linestyle="--", label=L"enhanced $HDO$")
+xlabel("Volume Mixing Ratio [ppm]", fontsize=18)
+ylabel("Altitude [km]", fontsize=18)
+title(L"$H_2O$ and HDO model profiles", fontsize=20)
+text(0.08, 59, "0.07ppm", color="darkred", size=16)
+text(5, 57, "80ppm", color="red", size=16)
+ax = gca()
+ax[:tick_params]("both",labelsize=16)
+legend(fontsize=14)
+savefig(experimentdir*extfn*"/waterprofs_80ppm.png")
 # show()
 
 # this computes the total water column in precipitable microns
@@ -686,7 +655,6 @@ function speciesbcs(species)
         species,
         ["f" 0.; "f" 0.])
 end
-
 
 H_effusion_velocity = effusion_velocity(Temp(zmax),1.0)
 H2_effusion_velocity = effusion_velocity(Temp(zmax),2.0)
@@ -2098,7 +2066,7 @@ if argarray[1]=="temp"
 elseif argarray[1]=="water"
     towrite2 = "T_0 = 209, T_tropo = 125, T_exo = 240, water init = $(argarray[2])"
 end
-f = open(experimentdir*"convergence_"*filebase*".txt", "w")
+f = open(experimentdir*extfn*"/convergence_"*filebase*".txt", "w")
 write(f, towrite)
 write(f, towrite2)
 close(f)
