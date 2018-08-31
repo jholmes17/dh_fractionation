@@ -193,7 +193,7 @@ println("ALERT: running sim for $(extfn)")
 
 # Set up the converged file to read from and load the simulation state at init.
 # use second line if in google drive
-readfile = scriptdir*"converged_standardwater_D.h5"
+readfile = scriptdir*"converged_standardwater.h5"
 println("ALERT: Using file: ", readfile)
 const alt=h5read(readfile,"n_current/alt")
 n_current = get_ncurrent(readfile)
