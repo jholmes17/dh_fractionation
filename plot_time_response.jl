@@ -1,3 +1,10 @@
+################################################################################
+# plot_time_response.jl - Plots the response of the atmosphere at select
+# snapshots designated by time indices. Can plot all species, selected species,
+# or the top most populous species.
+# Eryn Cangi
+# 31 August 2018
+################################################################################
 using PyPlot
 using HDF5
 using LaTeXStrings
@@ -591,13 +598,16 @@ function plot_top_spec(readfile, timevec, ext="")
     savefig("1yr_evolution"*ext*".png")
 end
 
-lead = "/home/emc/Google Drive/"#"/data/GoogleDrive/"#
-# f1 = "/home/emc/Google Drive/Phys/LASP/Mars/chaffincode-working/Results-Standard Water/one_year_response_to_80ppm_at_60km.h5"
-f1 = lead*"Phys/LASP/Mars/chaffincode-working/one_year_response_to_80ppm_at_60km.h5"
+# for files stored in Google drive
+# lead = "/data/GoogleDrive/Phys/LASP/Mars/chaffincode-working/"#"/home/emc/Google Drive/"#
+# for files stored in hard Drive
+lead = "/data/VaryTW_Ana/temp_192_110_199/"
+
+f1 = lead*"one_year_response_to_80ppm_at_60km.h5"
 plot_select_spec(f1, [1, 606, 790, 999], true)
 #plot_all_spec(f1, [1, 606, 790, 999], true)
 
-f2 = lead*"Phys/LASP/Mars/chaffincode-working/one_year_response_to_80ppm_at_60km_return.h5"
+f2 = lead*"one_year_response_to_80ppm_at_60km_return.h5"
 plot_select_spec(f2, [1, 606, 790, 999], true, "_return")
 #plot_all_spec(f2, [1, 606, 790, 999], true, "_return")
 

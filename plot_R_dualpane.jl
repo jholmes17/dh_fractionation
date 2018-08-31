@@ -1,3 +1,10 @@
+################################################################################
+# plot_R_dualpane.jl - Plots fractionation factor (Yung called it R) over time
+# in two panels, one showing a year, one showing 10 million years.
+# Eryn Cangi
+# 31 August 2018
+################################################################################
+
 using PyPlot
 using HDF5
 
@@ -392,9 +399,8 @@ function calcPopRatio(p)
     show()
 end
 
-lead = "/data/GoogleDrive/"#"/home/emc/GoogleDrive/"#
-
 # for doing Yung experiments
+# lead = "/data/GoogleDrive/"#"/home/emc/GoogleDrive/"#
 # P = lead*"Phys/LASP/chaffincode-working/Yung-With-Old-Water/"#
 # println("Input case number (just the number): ")
 # caseno = readline()#"Case 1"#
@@ -408,5 +414,3 @@ P = "/data/VaryTW_Ana/"*expfolder
 fH = P*"/H_esc_flux_history.h5"
 fD = P*"/D_esc_flux_history.h5"
 calcFractionation(fH, fD, P, expfolder, true)
-
-#calcPopRatio(P)

@@ -169,17 +169,24 @@ end
 ###################### Load Converged Test Case from File ######################
 ################################################################################
 
-# basic path information
-lead = "/data/GoogleDrive/"#"/home/emc/GoogleDrive/"#   # toggle when switching to laptop
-workingdir = "/data/VaryTW_Ana/"  # where experiments are stored on hard drive
+# Location of main scripts and convergence files. Use 2nd line if in Google drive
+scriptdir = "/data/GoogleDrive/Phys/LASP/chaffincode-working/"
+# scriptdir = "/home/emc/GoogleDrive/Phys/LASP/chaffincode-working/"
 
-# get command line arguments and specific folder of the experiment in use
+# Storage location for experiment results
+experimentdir = "/data/VaryTW_Ana/"  # where experiments are stored on hard drive
+
+# get command line arguments sent with run_and_plot.jl. format:
+# temp Tsurf Ttropo Texo ---- OR ---- water mixingratio
+# examples: temp 192 110 199      water 1e-3
 argarray = isdefined(:arg_from_rnp) ? arg_from_rnp : "ARGS BROKEN"
 filebase = isdefined(:extfn) ? extfn : "BROKEN"
 println("ALERT: running sim for $(filebase)")
 
-# readfile = lead * "Phys/LASP/chaffincode-working/converged_standardwater_D_"*extfn*".h5"
-readfile = workingdir*extfn*"/converged_standardwater_D_"*extfn*".h5"
+# Set up the converged file to read from and load the simulation state at init.
+# use second line if in google drive
+readfile = experimentdir*extfn*"/converged_standardwater_D_"*extfn*".h5"
+# readfile = scriptdir * "converged_standardwater_D_"*extfn*".h5"
 println("ALERT: Using file: ", readfile)
 const alt=h5read(readfile,"n_current/alt")
 n_current = get_ncurrent(readfile)
@@ -295,7 +302,6 @@ const Jratelist=[:JCO2ion,:JCO2toCOpO,:JCO2toCOpO1D,:JO2toOpO,:JO2toOpO1D,
 ################################################################################
 ########################## DISCRETIZATION PARAMTERS ###########################
 ################################################################################
-
 
 # set altitude grid and transport equilibrium from file
 const zmin = alt[1]
@@ -497,28 +503,28 @@ out when running the simulation without adding new species (most of the time).
 
 # General D/H ratio for mars, 5.5*SMOW, Atmosphere & Climate of Mars 2017
 DH = 5.5 * 1.6e-4        # SMOW value from Yung 1988
-# modify n_current
-n_current[:HDO] = n_current[:H2O] * DH
-n_current[:OD] = n_current[:OH] * DH
-n_current[:HDO2] = n_current[:H2O2] * DH
-n_current[:D] = n_current[:H] * DH
-n_current[:DO2] = n_current[:HO2] * DH
-n_current[:HD] = n_current[:H2] * DH
-n_current[:DOCO] = n_current[:HOCO] * DH
-
-# add the new Jrates --the values will get populated automatically
-n_current[:JHDOtoHpOD] = 0.0 * ones(length(alt))
-n_current[:JHDOtoDpOH] = 0.0 * ones(length(alt))
-n_current[:JHDO2toOHpOD] = 0.0 * ones(length(alt))
-n_current[:JHDOtoHDpO1D] = 0.0 * ones(length(alt)) # NEW 3/28
-n_current[:JHDOtoHpDpO] = 0.0 * ones(length(alt)) # NEW 3/28
-n_current[:JODtoOpD] = 0.0 * ones(length(alt)) # NEW 3/28
-n_current[:JHDtoHpD] = 0.0 * ones(length(alt)) # NEW 3/29
-n_current[:JDO2toODpO] = 0.0 * ones(length(alt)) # NEW 3/29
-n_current[:JHDO2toDO2pH] = 0.0 * ones(length(alt)) # NEW 3/30
-n_current[:JHDO2toHO2pD] = 0.0 * ones(length(alt)) # NEW 3/30
-n_current[:JHDO2toHDOpO1D] =  0.0 * ones(length(alt)) # NEW 3/30
-n_current[:JODtoO1DpD]  =  0.0 * ones(length(alt)) # NEW 3/30
+# # modify n_current
+# n_current[:HDO] = n_current[:H2O] * DH
+# n_current[:OD] = n_current[:OH] * DH
+# n_current[:HDO2] = n_current[:H2O2] * DH
+# n_current[:D] = n_current[:H] * DH
+# n_current[:DO2] = n_current[:HO2] * DH
+# n_current[:HD] = n_current[:H2] * DH
+# n_current[:DOCO] = n_current[:HOCO] * DH
+#
+# # add the new Jrates --the values will get populated automatically
+# n_current[:JHDOtoHpOD] = 0.0 * ones(length(alt))
+# n_current[:JHDOtoDpOH] = 0.0 * ones(length(alt))
+# n_current[:JHDO2toOHpOD] = 0.0 * ones(length(alt))
+# n_current[:JHDOtoHDpO1D] = 0.0 * ones(length(alt)) # NEW 3/28
+# n_current[:JHDOtoHpDpO] = 0.0 * ones(length(alt)) # NEW 3/28
+# n_current[:JODtoOpD] = 0.0 * ones(length(alt)) # NEW 3/28
+# n_current[:JHDtoHpD] = 0.0 * ones(length(alt)) # NEW 3/29
+# n_current[:JDO2toODpO] = 0.0 * ones(length(alt)) # NEW 3/29
+# n_current[:JHDO2toDO2pH] = 0.0 * ones(length(alt)) # NEW 3/30
+# n_current[:JHDO2toHO2pD] = 0.0 * ones(length(alt)) # NEW 3/30
+# n_current[:JHDO2toHDOpO1D] =  0.0 * ones(length(alt)) # NEW 3/30
+# n_current[:JODtoO1DpD]  =  0.0 * ones(length(alt)) # NEW 3/30
 
 
 ################################################################################
@@ -556,7 +562,7 @@ function Tspl(z::Float64, lapserate=-1.4e-5, Tsurf=211, ztropo=50e5, zexo=200e5,
     # with no derivative at the exobase.
 end
 
-function Tpiecewise(z::Float64, Tinf=240.0, Ttropo=125.0, lapserate=-1.4e-5, ztropo=90e5, ztropowidth=30e5)
+function Tpiecewise(z::Float64, Tsurf, Ttropo, Tinf, lapserate=-1.4e-5, ztropo=90e5)
     #=
     DO NOT MODIFY! If you want to change the temperature, define a
     new function or select different arguments and pass to Temp(z)
@@ -569,11 +575,15 @@ function Tpiecewise(z::Float64, Tinf=240.0, Ttropo=125.0, lapserate=-1.4e-5, ztr
 
     z: an altitude in cm.
     returns: temperature in K at the requested altitude.
-    sample output:
-    Tpiecewise(0.0) = 209.0
-    Tpiecewise(10e5) = 195.0
-    Tpiecewise(125e5) = 179.24123844008813
     =#
+    # allow varying troposphere width
+    ztropowidth = ztropo - (1/lapserate)*(Ttropo-Tsurf)
+    if ztropowidth < 0   # in case a profile is nonphysical, let lapse rate vary
+        ztropowidth = 30e5
+        m = (ztropo/1e5 - ztropowidth/1e5) / (Ttropo - Tsurf)
+        lapserate = (1/m)*1e-5
+    end
+
     if z >= ztropo
         return Tinf - (Tinf - Ttropo)*exp(-((z-ztropo)^2)/(8e10*Tinf))
     end
@@ -585,35 +595,18 @@ function Tpiecewise(z::Float64, Tinf=240.0, Ttropo=125.0, lapserate=-1.4e-5, ztr
     end
 end
 
-function Tco2(z, co2_col, Ttropo, Texo)
-    #=
-    co2_col: the CO2 population data for a column in the atmosphere from surface to top (200 km)
-    =#
-    lapserate=-1.4e-5
-    ztropo = 90e5
-    ztropowidth = 30e5
-    zindex = Int(z / 2e5)
-    overhead_co2 = sum(co2_col[zindex+1:end])
-
-    if z >= ztropo - ztropowidth
-        return Ttropo + (Texo - Ttropo)*exp(-overhead_co2*5e-15)
-    end
-    if ztropo-ztropowidth > z
-        return Ttropo-lapserate*(ztropo-ztropowidth-z)
-    end
-
-    return
-end
-
 #If changes to the temperature are needed, they should be made here
-Temp(z::Float64) = Tpiecewise(z)
+if argarray[1]=="temp"
+    Temp(z::Float64) = Tpiecewise(z, argarray[2], argarray[3], argarray[4])
+else
+    Temp(z::Float64) = Tpiecewise(z, 192.0, 110.0, 199.0)
+end
 
 
 ################################################################################
 ############################### WATER PROFILES #################################
 ################################################################################
 
-# CREATE THE WATER AND HDO PROFILES ============================================
 # calculate saturation vapor pressure (SVP). 1st parenthetical is a conversion
 # factor to convert to (#/cm^3) bceause the 2nd parenthetical (from Washburn
 # 1924) gives the value in mmHg. TODO: Does this need to change for HDO?
@@ -627,24 +620,17 @@ H2Oinitfrac = H2Osatfrac[1:findfirst(H2Osatfrac, minimum(H2Osatfrac))]
 H2Oinitfrac = [H2Oinitfrac, fill(minimum(H2Osatfrac), # ensures no supersaturation
                length(alt)-2-length(H2Oinitfrac));]
 
-H2Oinitfrac[find(x->x<30e5, alt)]=1e-4 # set all values below 30 km to 0.0001
+# set all values below certain altitude to a certain fraction (arbitrary)
+if argarray[1] == "water"
+   H2Oinitfrac[find(x->x<60e5, alt)] = argarray[2]
+else
+   H2Oinitfrac[find(x->x<30e5, alt)] = 1e-4
+end
+
 for i in [1:length(H2Oinitfrac);]
     H2Oinitfrac[i] = H2Oinitfrac[i] < H2Osatfrac[i+1] ? H2Oinitfrac[i] : H2Osatfrac[i+1]
 end
 HDOinitfrac = H2Oinitfrac * DH  # initial profile for HDO
-
-H2Olowfrac = H2Osatfrac[1:findfirst(H2Osatfrac, minimum(H2Osatfrac))]
-H2Olowfrac = [H2Olowfrac, fill(minimum(H2Osatfrac),length(alt)-2-length(H2Olowfrac));]
-H2Olowfrac[find(x->x<30e5, alt)]=0.5e-4
-for i in [1:length(H2Olowfrac);]
-    H2Olowfrac[i] = H2Olowfrac[i] < H2Osatfrac[i+1] ? H2Olowfrac[i] : H2Osatfrac[i+1]
-end
-H2Onohighalt = deepcopy(H2Oinitfrac)
-H2Onohighalt[find(x->x>30e5, alt[2:end-1])]=0.0
-# HDO
-HDOlowfrac = H2Olowfrac * DH
-HDOnohighalt = deepcopy(HDOinitfrac)
-HDOnohighalt[find(x->x>30e5, alt[2:end-1])]=0.0
 
 # add in a detached water vapor layer, which looks kinda like a gaussian packet
 # floating at 60km (Maltagliati 2013)
@@ -910,7 +896,6 @@ function fluxcoefs(z, dz, species, n_current)
               [H0m, H00, H0p],
               species)
 end
-
 
 function lower_up(z, dz, species, n_current)
     #= define transport coefficients for a given atmospheric layer for
@@ -1571,7 +1556,7 @@ end #update!
 ################################################################################
 
 # Change following line as needed depending on local machine
-xsecfolder = lead * "Phys/LASP/chaffincode-working/uvxsect/";
+xsecfolder = scriptdir * "uvxsect/";
 
 # CO2 ==========================================================================
 # temperature-dependent between 195-295K
@@ -1790,7 +1775,7 @@ function quantumyield(xsect::Array, arr)
 end
 
 # Change following line as needed depending on local machine
-const solarflux=readandskip(lead*"Phys/LASP/chaffincode-working/marssolarphotonflux.dat",'\t',Float64,skipstart=4)[1:2000,:]
+const solarflux=readandskip(scriptdir*"marssolarphotonflux.dat",'\t',Float64,skipstart=4)[1:2000,:]
 solarflux[:,2] = solarflux[:,2]/2
 
 absorber = Dict(:JCO2ion =>:CO2,
@@ -2102,29 +2087,6 @@ function timeupdate(mytime)
     ## yield()
 end
 
-################################################################################
-############################# CONVERGENCE CODE #################################
-################################################################################
-# Extra code to reach convergence to equilibrium over millions of years
-# STANDARD WATER CASE ----------------------------------------------------------
-n_current[:H2O] = H2Oinitfrac.*map(z->n_tot(n_current, z),alt[2:end-1])
-n_current[:HDO] = HDOinitfrac.*map(z->n_tot(n_current, z),alt[2:end-1])
-[timeupdate(t) for t in [10.0^(1.0*i) for i in -3:14]]
-for i in 1:100
-    # plotatm()
-    # println("dt: ", mytime)
-    update!(n_current, 1e14)
-end
-write_ncurrent(n_current,"converged_standardwater_D_reproYung.h5")
-
-# HIGH WATER CASE --------------------------------------------------------------
-# n_current[:H2O]=detachedlayer.*map(z->n_tot(n_current, z),alt[2:end-1])
-# n_current[:HDO] = detachedlayer_HDO.*map(z->n_tot(n_current, z),alt[2:end-1])
-# [timeupdate(t) for t in [10.0^(1.0*i) for i in -3:14]]
-# for i in 1:100
-#     update!(n_current, 1e14)
-# end
-# write_ncurrent(n_current,"converged_highwater_D_updatedrates.h5")
 
 ################################################################################
 ################################# LOGGING ######################################
@@ -2136,7 +2098,7 @@ if argarray[1]=="temp"
 elseif argarray[1]=="water"
     towrite2 = "T_0 = 209, T_tropo = 125, T_exo = 240, water init = $(argarray[2])"
 end
-f = open(workingdir*"convergence_"*filebase*".txt", "w")
+f = open(experimentdir*"convergence_"*filebase*".txt", "w")
 write(f, towrite)
 write(f, towrite2)
 close(f)

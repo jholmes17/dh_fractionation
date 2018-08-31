@@ -1,3 +1,10 @@
+################################################################################
+# plot_snapshot.jl - Plots a snapshot of the atmospheric state at a specified
+# time index within the simulation.
+# Eryn Cangi
+# 31 August 2018
+################################################################################
+
 using PyPlot
 using HDF5
 using LaTeXStrings
@@ -253,10 +260,8 @@ function plot_snap(readfile, timevec, poster, init=false)
     #savefig("snapshot_"*string(timevec[1])*".png")
 end
 
-lead = "/data/VaryTW/"#"/data/GoogleDrive/"#"/home/emc/GoogleDrive/"
-# rf = lead * "Phys/LASP/chaffincode-working/Yung-With-Old-Water/Case 1/ppm_0_alt_0.h5"
-
-rf = lead * "s-midlat-summer-morn/ppm_80_alt_80.h5"
+# FILL ME IN
+rf = "/data/VaryTW_Ana/temp_192_110_199/ppm_80_alt_80.h5"
 # plot_snap(rf, [1], true)
 # plot_snap(rf, [606], true)
 # plot_snap(rf, [790], true)

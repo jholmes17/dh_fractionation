@@ -6,15 +6,16 @@ arg_from_rnp = Any[ARGS[i] for i in 1:1:length(ARGS)] # get the args from comman
 
 # following code is specifically for temp/water variation experiments, can remove
 # this block later
+# extfn = extension to a filename - where a specific experiment is
 if arg_from_rnp[1] == "temp"
     extfn = "temp_$(arg_from_rnp[2])_$(arg_from_rnp[3])_$(arg_from_rnp[4])"
 elseif arg_from_rnp[1] == "water"
     extfn = "water_$(arg_from_rnp[2])"
 end
-# extfn = # name of a folder where experiment is located (generalized)
+
 
 @eval @everywhere extfn=$extfn
-@everywhere include("setup_photochemistry_anavaryTW.jl") # NOTE: change this as needed
+@everywhere include("setup_photochemistry.jl") # NOTE: change this as needed
 @everywhere @time update!(n_current,0.)
 
 # Run the simulation with logarithmic time steps
@@ -23,10 +24,10 @@ end
 @everywhere append!(timediff,3.3e6*3.14e7*ones(Float64,300))
 
 # identify the converged test case file NOTE: fix all this as needed
-lead = "/data/GoogleDrive/"#"/home/emc/GoogleDrive/"#  # computer root folder
-dataloc = "/data/VaryTW_Ana/"  # used for when experiments stored on desktop
-# readfile = lead*"Phys/LASP/chaffincode-working/"*extfn*"/converged_standardwater_D_"*extfn*".h5"  # if experiments stored in google drive
-readfile = dataloc*extfn*"/converged_standardwater_D_"*extfn*".h5"
+scriptdir = "/data/GoogleDrive/Phys/LASP/chaffincode-working/" # the main script directory
+experimentdir = "/data/VaryTW_Ana/"  # used for when experiments stored on desktop
+# readfile = scriptdir*extfn*"/converged_standardwater_D_"*extfn*".h5"  # if experiments stored in google drive
+readfile = experimentdir*extfn*"/converged_standardwater_D_"*extfn*".h5"
 println("ALERT: Using file: ", readfile)
 
 # water ppm of 20, 40, 60, 80 each tested at altitudes 20, 40, 60, 80, 120
@@ -36,7 +37,8 @@ hdoppmvec = waterppmvec * DH
 wateraltvec = [20 40 60 80 100 120]
 parmsvec = [[a,b] for a in waterppmvec, b in wateraltvec]
 parmsvec = reshape(parmsvec,length(parmsvec))
-filenamevec=[string(dataloc*extfn*"/ppm_",a[1],"_alt_",a[2],".h5") for a in parmsvec]
+filenamevec = [string(experimentdir*extfn*"/ppm_", a[1], "_alt_", a[2], ".h5")
+               for a in parmsvec]
 
 @everywhere function runwaterprofile(n_current, ppmadd, peakalt, dtlist, filename)\
     #=
@@ -285,17 +287,18 @@ n_converged = get_ncurrent(readfile)
 
 # Add water / run for a year / remove water / run for a year ===================
 println("running sim for one year")
-oneyearfn = dataloc*extfn*"/one_year_response_to_80ppm_at_60km.h5"
+oneyearfn = experimentdir*extfn*"/one_year_response_to_80ppm_at_60km.h5"
 n_oneyear = runwaterprofile(n_converged, 80, 60, oneyeartimediff, oneyearfn)
 
 println("now removing the water")
-returnfn = dataloc*extfn*"/one_year_response_to_80ppm_at_60km_return.h5"
+returnfn = experimentdir*extfn*"/one_year_response_to_80ppm_at_60km_return.h5"
 n_return = runwaterprofile(n_oneyear, 0., 60, oneyeartimediff, returnfn)
 
 # Add water and run for just over a year, no removal ===========================
 # This runs the simulation for all added ppms and altitudes
 println("Now doing water profiles")
-pmap(x->runwaterprofile(n_current,x[1],x[2],timediff,x[3]),[[p,f;] for (p,f) in zip(parmsvec,filenamevec)])
+pmap(x->runwaterprofile(n_current, x[1], x[2], timediff, x[3]),
+     [[p,f;] for (p,f) in zip(parmsvec,filenamevec)])
 println("Finished with water profiles")
 pmap(get_all_rates_and_fluxes,filenamevec)
 
@@ -345,28 +348,28 @@ end
 
 # WRITE OUT H, D, H+D ESCAPE FLUX HISTORY ======================================
 println("Writing H esc file")
-hfile = dataloc*extfn*"/H_esc_flux_history.h5"
+hfile = experimentdir*extfn*"/H_esc_flux_history.h5"
 h5open(hfile, isfile(hfile) ? "r+" : "w") do file
    write(file,"fluxes/fluxvals",writeHfluxes)
-   write(file,"fluxes/times",h5read(dataloc*extfn*"/ppm_20_alt_20.h5","n_current/timelist"))
+   write(file,"fluxes/times",h5read(experimentdir*extfn*"/ppm_20_alt_20.h5","n_current/timelist"))
    write(file,"waterprofs/ppm",writewaterprof)
    write(file,"waterprofs/alt",alt[2:end-1])
 end
 
 println("Writing D esc file")
-hfile = dataloc*extfn*"/D_esc_flux_history.h5"
+hfile = experimentdir*extfn*"/D_esc_flux_history.h5"
 h5open(hfile, isfile(hfile) ? "r+" : "w") do file
    write(file,"fluxes/fluxvals",writeDfluxes)
-   write(file,"fluxes/times",h5read(dataloc*extfn*"/ppm_20_alt_20.h5","n_current/timelist"))
+   write(file,"fluxes/times",h5read(experimentdir*extfn*"/ppm_20_alt_20.h5","n_current/timelist"))
    write(file,"hdoprofs/ppm",writehdoprof)
    write(file,"waterprofs/alt",alt[2:end-1])
 end
 
 println("Writing H+D esc file")
-hdfile = dataloc*extfn*"/H_and_D_esc_flux_history.h5"
+hdfile = experimentdir*extfn*"/H_and_D_esc_flux_history.h5"
 h5open(hdfile, isfile(hdfile) ? "r+" : "w") do file
    write(file,"fluxes/fluxvals",writeHDfluxes)
-   write(file,"fluxes/times",h5read(dataloc*extfn*"/ppm_20_alt_20.h5","n_current/timelist"))
+   write(file,"fluxes/times",h5read(experimentdir*extfn*"/ppm_20_alt_20.h5","n_current/timelist"))
    write(file,"waterprofs/ppm",writewaterprof)
    write(file, "hdoprofs/ppm", writehdoprof)
    write(file,"waterprofs/alt",alt[2:end-1])

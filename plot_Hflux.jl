@@ -1,3 +1,9 @@
+################################################################################
+# plot_Hflux.jl - Plots the flux of H and D over time.
+# Eryn Cangi
+# 31 August 2018
+################################################################################
+
 using PyPlot
 using HDF5
 using LaTeXStrings
