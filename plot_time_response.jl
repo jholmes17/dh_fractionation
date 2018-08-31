@@ -1,5 +1,5 @@
-using HDF5
 using PyPlot
+using HDF5
 using LaTeXStrings
 
 function convert_secs(secs)
@@ -142,7 +142,7 @@ function plot_select_spec(readfile, timevec, poster, ext="")
         :Ar => "-",
         :N2 => "-",);
 
-    # Font size setup_photochemistry
+    # Font size settings
     if poster==true
         fs = Dict("ticks"=>16, "labels"=>22, "legend"=>18, "title"=>26, "spec"=>14)
     elseif poster==false
@@ -152,7 +152,7 @@ function plot_select_spec(readfile, timevec, poster, ext="")
     # make a figure and set up some global labels
     fig, ax = subplots(1,length(timevec), sharey=true, figsize=(25,5))
 
-    # do not change the following and do not use tight_layout(), it conflicts 
+    # do not change the following and do not use tight_layout(), it conflicts
     subplots_adjust(wspace=0, bottom=0.15)
     ax[1,1][:set_xlabel]("Volume Mixing Ratio [ppm]", fontsize=fs["labels"])
     ax[1,1][:set_ylabel]("Altitude [km]", fontsize=fs["labels"])

@@ -2,14 +2,19 @@
 ## to produce model output useful for a 2016 photochemistry paper
 
 arg_from_rnp = Any[ARGS[i] for i in 1:1:length(ARGS)] # get the args from command line
-@eval @everywhere arg_from_rnp=$arg_from_rnp
+@eval @everywhere arg_from_rnp=$arg_from_rnp          # make accessible to all scripts
+
+# following code is specifically for temp/water variation experiments, can remove
+# this block later
 if arg_from_rnp[1] == "temp"
     extfn = "temp_$(arg_from_rnp[2])_$(arg_from_rnp[3])_$(arg_from_rnp[4])"
 elseif arg_from_rnp[1] == "water"
     extfn = "water_$(arg_from_rnp[2])"
 end
+# extfn = # name of a folder where experiment is located (generalized)
+
 @eval @everywhere extfn=$extfn
-@everywhere include("setup_photochemistry_anavaryTW.jl") # TODO: change as needed
+@everywhere include("setup_photochemistry_anavaryTW.jl") # NOTE: change this as needed
 @everywhere @time update!(n_current,0.)
 
 # Run the simulation with logarithmic time steps
@@ -17,10 +22,10 @@ end
 @everywhere timediff = timepts[2:end]-timepts[1:end-1]
 @everywhere append!(timediff,3.3e6*3.14e7*ones(Float64,300))
 
-# identify the converged test case file TODO: fix all this as needed
-lead = "/data/GoogleDrive/"#"/home/emc/GoogleDrive/"#
-dataloc = "/data/VaryTW_Ana/"
-# readfile = lead*"Phys/LASP/chaffincode-working/"*extfn*"/converged_standardwater_D_"*extfn*".h5"
+# identify the converged test case file NOTE: fix all this as needed
+lead = "/data/GoogleDrive/"#"/home/emc/GoogleDrive/"#  # computer root folder
+dataloc = "/data/VaryTW_Ana/"  # used for when experiments stored on desktop
+# readfile = lead*"Phys/LASP/chaffincode-working/"*extfn*"/converged_standardwater_D_"*extfn*".h5"  # if experiments stored in google drive
 readfile = dataloc*extfn*"/converged_standardwater_D_"*extfn*".h5"
 println("ALERT: Using file: ", readfile)
 
