@@ -169,12 +169,13 @@ end
 ###################### Load Converged Test Case from File ######################
 ################################################################################
 
-# Location of main scripts and convergence files. Use 2nd line if in Google drive
+# Location of main scripts and convergence files. Use 2nd line if on laptop
 scriptdir = "/data/GoogleDrive/Phys/LASP/chaffincode-working/"
-# scriptdir = "/home/emc/GoogleDrive/Phys/LASP/chaffincode-working/"
+#scriptdir = "/home/emc/GoogleDrive/Phys/LASP/chaffincode-working/"
 
 # Storage location for experiment results
 experimentdir = "/data/VaryTW_Ana/"  # where experiments are stored on hard drive
+#experimentdir = "/home/emc/GoogleDrive/Phys/LASP/chaffincode-working/"
 
 # get command line arguments sent with run_and_plot.jl. format:
 # temp Tsurf Ttropo Texo ---- OR ---- water mixingratio
@@ -187,6 +188,8 @@ if argarray[1] == "temp"
     extfn = "temp_$(argarray[2])_$(argarray[3])_$(argarray[4])"
 elseif argarray[1] == "water"
     extfn = "water_$(argarray[2])"
+elseif argarray[1] == "dh"
+    extfn = "dh_$(argarray[2])"
 end
 
 println("ALERT: running sim for $(extfn)")
@@ -504,12 +507,15 @@ reactionnet = [   #Photodissociation
 
 #=
 THIS SECTION ADDS NEW SPECIES AND J RATES TO THE CODEBASE.
-Uncomment this section to add new species in the style shown below. Comment it
-out when running the simulation without adding new species (most of the time).
 =#
 
 # General D/H ratio for mars, 5.5*SMOW, Atmosphere & Climate of Mars 2017
-DH = 5.5 * 1.6e-4        # SMOW value from Yung 1988
+if argarray[1] != "dh"
+    DH = 5.5 * 1.6e-4        # SMOW value from Yung 1988
+elseif argarray[1] == "dh"
+    DH = argarray[2] * 1.6e-4
+end
+
 # modify n_current
 n_current[:HDO] = n_current[:H2O] * DH
 n_current[:OD] = n_current[:OH] * DH
@@ -569,6 +575,7 @@ function Tspl(z::Float64, lapserate=-1.4e-5, Tsurf=211, ztropo=50e5, zexo=200e5,
     # with no derivative at the exobase.
 end
 
+# my piecewise  TODO: Revert
 function Tpiecewise(z::Float64, Tsurf, Ttropo, Tinf, lapserate=-1.4e-5, ztropo=90e5)
     #=
     DO NOT MODIFY! If you want to change the temperature, define a
@@ -602,7 +609,7 @@ function Tpiecewise(z::Float64, Tsurf, Ttropo, Tinf, lapserate=-1.4e-5, ztropo=9
     end
 end
 
-#If changes to the temperature are needed, they should be made here
+#If changes to the temperature are needed, they should be made here  TODO: Revert
 if argarray[1]=="temp"
     Temp(z::Float64) = Tpiecewise(z, argarray[2], argarray[3], argarray[4])
 else
@@ -616,7 +623,7 @@ end
 
 # calculate saturation vapor pressure (SVP). 1st parenthetical is a conversion
 # factor to convert to (#/cm^3) bceause the 2nd parenthetical (from Washburn
-# 1924) gives the value in mmHg. TODO: Does this need to change for HDO?
+# 1924) gives the value in mmHg and converts to #/cm^3. TODO: Does this need to change for HDO?
 Psat(T::Float64) = (133.3/(10^6 * boltzmannK * T))*(10^(-2445.5646/T + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 - 6.757169))
 # H2Osat is an array of H2O SVP in 1/cm^3, a number per volume, by altitude
 H2Osat = map(x->Psat(x), map(Temp, alt))
@@ -647,10 +654,12 @@ detachedlayer_HDO = detachedlayer * DH
 # this computes the total water column in precipitable microns
 # n_col(molecules/cm2)/(molecules/mol)*(gm/mol)*(1cc/gm) = (cm)*(10^4μm/cm)
 # = precipitable μm
-(sum(([1e-4, H2Oinitfrac;]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*18*1e4
-(sum(([1e-4, detachedlayer;]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*18*1e4
-(sum(([1e-4, HDOinitfrac;]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*18*1e4
-(sum(([1e-4, detachedlayer_HDO;]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*18*1e4
+# println("Total water col: ", sum(n_current[:H2O])*2e5)
+# println("Water at surface: ", n_current[:H2O][1])
+# println((sum(([1e-4, H2Oinitfrac;]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*18*1e4)
+# println((sum(([1e-4, detachedlayer;]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*18*1e4)
+# println((sum(([1e-4*DH, HDOinitfrac;]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*19*1e4)
+# println((sum(([1e-4*DH, detachedlayer_HDO;]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*19*1e4)
 
 ################################################################################
 ############################# BOUNDARY CONDITIONS ##############################
@@ -1534,7 +1543,7 @@ end
     end
 
     update_Jrates!(n_current)
-    #plotatm()
+    # plotatm() #TODO turn me off
 end #update!
 
 ################################################################################
@@ -1562,7 +1571,7 @@ co2exdata = readandskip(xsecfolder*"binnedCO2e.csv",',',Float64, skipstart = 4)
 h2oxdata = readandskip(xsecfolder*"h2oavgtbl.dat",'\t',Float64, skipstart = 4)
 
 # NEW - HDO crosssection. Data is for 298K.
-hdoxdata = readandskip(xsecfolder*"HDO.dat",'\t', Float64, skipstart=4)
+hdoxdata = readandskip(xsecfolder*"HDO.dat",'\t', Float64, skipstart=4) #deepcopy(h2oxdata)#
 
 # H2O2 + HDO2 ==================================================================
 # the data in the table cover the range 190-260nm
@@ -2117,10 +2126,12 @@ if argarray[1]=="temp"
     towrite2 = "T_0 = $(argarray[2]), T_tropo = $(argarray[3]), T_exo = $(argarray[4]), water init = 1e-4"
 elseif argarray[1]=="water"
     towrite2 = "T_0 = 209, T_tropo = 125, T_exo = 240, water init = $(argarray[2])"
+elseif argarray[1]=="dh"
+    towrite2 = "T=mean, water=1e-4, DH=$(argarray[2])"
 end
 f = open(experimentdir*extfn*"/convergence_"*extfn*".txt", "w")
 write(f, towrite)
 write(f, towrite2)
 close(f)
 
-println("ALERT: Finished convergence for $(argarray[1])")
+println("ALERT: Finished convergence")#
