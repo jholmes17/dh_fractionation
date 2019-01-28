@@ -51,7 +51,7 @@ function convert_secs(secs)
     return [yrs, days, hrs]
 end
 
-function plot_snap(readfile, timevec, poster, init=false)
+function plot_snap(readfile, timevec, poster, convergefile=false, init=false)
     #=
     Creates a plot of selected species volume mixing ratio by altitude at the
     equilibrium case. The data is given in number density by species and
@@ -60,11 +60,17 @@ function plot_snap(readfile, timevec, poster, init=false)
 
     readfile: hdf5 file of Results
     timevec: time to plot, must be a 1-length vector so I dont have to change code lol
+    poster: make fonts big if this is going on a poster
+    convergefile: whether the file being read is a convergence (equilibrium) file
+    init: whether the snapshot wanted is the beginning of the simulation. init
+          must be false if convergefile is true
 
     =#
     println(readfile)
     const alt = h5read(readfile,"n_current/alt")  # read in the altitudes
-    const times = h5read(readfile,"n_current/timelist")  # read in the times
+    if convergefile != true
+        const times = h5read(readfile,"n_current/timelist")  # read in the times
+    end
 
     # read in species names and map them to symbols
     species = map(Symbol,h5read(readfile,"n_current/species"))
@@ -172,7 +178,11 @@ function plot_snap(readfile, timevec, poster, init=false)
     for i in (1:length(timevec))
         # grab the data from just the iteration we want
         if init==false
-            ncur_mat = h5read(readfile,"n_current/iter_$(timevec[i])");
+            if convergefile == true
+                ncur_mat = h5read(readfile, "n_current/n_current_mat")
+            else
+                ncur_mat = h5read(readfile,"n_current/iter_$(timevec[i])");
+            end
         elseif init==true
             ncur_mat = h5read(readfile,"n_current/init");
         end
@@ -196,7 +206,7 @@ function plot_snap(readfile, timevec, poster, init=false)
             # compute the total number density at altitude alt[a]
             for s in species
                 n_tot_this_alt += ncurrent[s][a]
-             end
+            end
 
             # convert to VMR and fill the array
             for s2 in species
@@ -205,25 +215,31 @@ function plot_snap(readfile, timevec, poster, init=false)
         end
 
         # convert the iteration number to a time in years, days, hours
-        secs = times[timevec[i]]
-        time = convert_secs(secs)
-        key = ["years ", "days ", "hours "]
         timestr = ""
-        for t in range(1,length(time))
-          if time[t] != 0
-              timestr = timestr * "$(Int(time[t])) $(key[t])"
-          end
-        end
-        if timestr == ""
-            timestr = "Initial"
+        if convergefile == false
+            secs = times[timevec[i]]
+            time = convert_secs(secs)
+            key = ["years ", "days ", "hours "]
+
+            for t in range(1,length(time))
+              if time[t] != 0
+                  timestr = timestr * "$(Int(time[t])) $(key[t])"
+              end
+            end
+            if timestr == ""
+                timestr = "Initial"
+            end
+        else
+            timestr = "Converged atomsphere"
         end
 
         # PLOT - SELECT SPECIES
         for (s, sstr) in zip(species, species_str)
             # only plot some of the most important species
             if !contains(string(s), "J")  # do not plot J rates
-                if sstr in ["H_2O_2", "HDO_2", "DO_2", "HO_2", "HD", "H_2", "H", "D", "H_2O", "HDO", "O", "O_2", "CO_2"]
+                if sstr in ["O_3", "H_2O_2", "HDO_2", "DO_2", "HO_2", "HD", "H_2", "H", "D", "H_2O", "HDO", "O", "O_2", "CO_2"]
                     x = ncurrent_vmr[s]
+
                     # set line thicknesses
                     if sstr in ["H", "D"]
                         lw = 3
@@ -261,10 +277,10 @@ function plot_snap(readfile, timevec, poster, init=false)
 end
 
 # FILL ME IN
-rf = "/data/VaryTW_Ana/temp_192_110_199/ppm_80_alt_80.h5"
+rf = "/data/VaryTW_Ana/good/temp_192_110_199/converged_standardwater_D_temp_192_110_199.h5"
 # plot_snap(rf, [1], true)
 # plot_snap(rf, [606], true)
 # plot_snap(rf, [790], true)
 # plot_snap(rf, [999], true)
 # plot_snap(rf, [1100], true)
-plot_snap(rf, [668], true, true)
+plot_snap(rf, [1], true, true, false)

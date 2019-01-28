@@ -4,15 +4,15 @@
 arg_from_rnp = Any[ARGS[i] for i in 1:1:length(ARGS)] # get the args from command line
 @eval @everywhere arg_from_rnp=$arg_from_rnp          # make accessible to all scripts
 
-# following code is specifically for temp/water variation experiments, can remove
-# this block later
+# following code is specifically for temp/water/dh variation experiments
 # extfn = extension to a filename - where a specific experiment is
 if arg_from_rnp[1] == "temp"
     extfn = "temp_$(arg_from_rnp[2])_$(arg_from_rnp[3])_$(arg_from_rnp[4])"
 elseif arg_from_rnp[1] == "water"
     extfn = "water_$(arg_from_rnp[2])"
+elseif arg_from_rnp[1] == "dh"
+    extfn = "dh_$(arg_from_rnp[2])"
 end
-
 
 @eval @everywhere extfn=$extfn
 @everywhere include("setup_photochemistry.jl") # NOTE: change this as needed
