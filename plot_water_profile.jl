@@ -1,10 +1,12 @@
 using HDF5
 using PyPlot
 
-function plot_water_profile(readfile, packettype)
+function plot_water_profile(thepath, thefile)#, packettype)
     #=
     Creates a plot of water concentration in PPM vs. altitude.
     =#
+
+    readfile = thepath*thefile
 
     const alt = h5read(readfile,"waterprofs/alt")  # read in the altitudes
     const ppm = h5read(readfile,"waterprofs/ppm")  # read in the ppm
@@ -81,8 +83,10 @@ function plot_water_profile(readfile, packettype)
     f = matplotlib[:ticker][:FormatStrFormatter]("%d") # Define format of tick labels
     ax[:xaxis][:set_major_locator](Mx) # Set interval of major ticks
     ax[:xaxis][:set_major_formatter](f) # Set format of tick labels
-    savefig("waterprofile.png")
+    savefig(thepath*"waterprofile.png")
 end
 
-f1 = "/home/emc/Google Drive/Phys/LASP/Mars/chaffincode-working/Results - Standard Water/H_esc_flux_history.h5"
-plot_water_profile(f1)
+lead = "/home/emc/GDrive-CU/"
+exper = "Research/Results/VarWaterTemp/temp_192_110_199/"
+fn = "H_esc_flux_history.h5"
+plot_water_profile(lead*exper, fn)

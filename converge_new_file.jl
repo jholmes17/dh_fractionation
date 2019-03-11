@@ -170,12 +170,12 @@ end
 ################################################################################
 
 # Location of main scripts and convergence files. Use 2nd line if on laptop
-scriptdir = "/data/GoogleDrive/Phys/LASP/chaffincode-working/"
-#scriptdir = "/home/emc/GoogleDrive/Phys/LASP/chaffincode-working/"
+scriptdir = "/data/GDrive-CU/Research/chaffincode-working/"
+#scriptdir = "/home/emc/GDrive-CU/Research/chaffincode-working/"
 
 # Storage location for experiment results
-experimentdir = "/data/VaryTW_Ana/"  # where experiments are stored on hard drive
-#experimentdir = "/home/emc/GoogleDrive/Phys/LASP/chaffincode-working/"
+experimentdir = "/data/GDrive-CU/Research/Results/"  # where experiments are stored on hard drive
+#experimentdir = "/home/emc/GoogleDrive/Research/Results/"
 
 # get command line arguments sent with run_and_plot.jl. format:
 # temp Tsurf Ttropo Texo ---- OR ---- water mixingratio
@@ -195,7 +195,6 @@ end
 println("ALERT: running sim for $(extfn)")
 
 # Set up the converged file to read from and load the simulation state at init.
-# use second line if in google drive
 readfile = scriptdir*"converged_standardwater.h5"
 println("ALERT: Using file: ", readfile)
 const alt=h5read(readfile,"n_current/alt")
@@ -241,10 +240,6 @@ const speciesmolmasslist = Dict(:CO2=>44, :O2=>32, :O3=>48, :H2=>2, :OH=>17,
                                 :HDO=>19, :OD=>18, :HDO2=>35, :D=>2, :DO2=>34,
                                 :HD=>3, :DOCO=>46);
                                 # note that Ar has a mass of 40 because its the most stable isotope
-
-function fluxsymbol(x)
-    Symbol(string("f",string(x)))
-end
 const fluxlist = map(fluxsymbol, fullspecieslist)
 
 # array of species for which photolysis is important. All rates should
@@ -348,8 +343,8 @@ reactionnet = [   #Photodissociation
              [[:H2O], [:H, :OH], :JH2OtoHpOH],
              [[:H2O], [:H2, :O1D], :JH2OtoH2pO1D],
              [[:H2O], [:H, :H, :O], :JH2OtoHpHpO],
-             [[:HDO], [:H, :OD], :JHDOtoHpOD], # TODO: check this is half of JH2OtoHpOH!
-             [[:HDO], [:D, :OH], :JHDOtoDpOH], # TODO: check this is half of JH2OtoHpOH!
+             [[:HDO], [:H, :OD], :JHDOtoHpOD], 
+             [[:HDO], [:D, :OH], :JHDOtoDpOH], 
              [[:HDO], [:HD, :O1D], :JHDOtoHDpO1D], # added 3/28, inspiration from Yung89
              [[:HDO], [:H, :D, :O], :JHDOtoHpDpO], # added 3/28, inspiration from Yung89
              [[:H2O2], [:OH, :OH], :JH2O2to2OH],
@@ -539,7 +534,6 @@ n_current[:JHDO2toHO2pD] = 0.0 * ones(length(alt)) # NEW 3/30
 n_current[:JHDO2toHDOpO1D] =  0.0 * ones(length(alt)) # NEW 3/30
 n_current[:JODtoO1DpD]  =  0.0 * ones(length(alt)) # NEW 3/30
 
-
 ################################################################################
 ####################### TEMPERATURE/PRESSURE PROFILES ##########################
 ################################################################################
@@ -621,21 +615,56 @@ end
 ############################### WATER PROFILES #################################
 ################################################################################
 
-# calculate saturation vapor pressure (SVP). 1st parenthetical is a conversion
-# factor to convert to (#/cm^3) bceause the 2nd parenthetical (from Washburn
-# 1924) gives the value in mmHg and converts to #/cm^3. TODO: Does this need to change for HDO?
-Psat(T::Float64) = (133.3/(10^6 * boltzmannK * T))*(10^(-2445.5646/T + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 - 6.757169))
-# H2Osat is an array of H2O SVP in 1/cm^3, a number per volume, by altitude
-H2Osat = map(x->Psat(x), map(Temp, alt))
-HDOsat = H2Osat * DH  # used later in boundary conditions
+# H2O Saturation Vapor Pressure ------------------------------------------------
+# 1st term is a conversion factor to convert to (#/cm^3) bceause the 2nd
+# term (from Washburn 1924) gives the value in mmHg and converts to #/cm^3.
+Psat(T::Float64) = ((133.3*1e-6)/(boltzmannK * T))*(10^(-2445.5646/T + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 - 6.757169))
+H2Osat = map(x->Psat(x), map(Temp, alt)) # array in #/cm^3 by altitude
 H2Osatfrac = H2Osat./map(z->n_tot(n_current, z),alt)  # get SVP as fraction of total atmo
 # set H2O SVP fraction to minimum for all alts above first time min is reached
 H2Oinitfrac = H2Osatfrac[1:findfirst(H2Osatfrac, minimum(H2Osatfrac))]
 H2Oinitfrac = [H2Oinitfrac, fill(minimum(H2Osatfrac), # ensures no supersaturation
                length(alt)-2-length(H2Oinitfrac));]
 
-# set all values below certain altitude to a certain fraction (arbitrary)
-if argarray[1] == "water"
+# HDO Saturation Vapor Pressure (for boundary conditions) ----------------------
+function LHDO(T)
+   #=
+   Latent heat of vaporization of HDO as a function of temperature in K.
+   This analytical function was determined by fitting data from
+   https://pubs.acs.org/doi/pdf/10.1021/cr60292a004 (Jancso 1974, page 734)
+   and extrapolating. It is probably not accurate outside the range of the data,
+   which was 0-100, but it shouldn't be too far off.
+
+   The data was in cal/mol versus Celsius. We convert to kJ/mol below.
+   Fit was done in Python in a separate script. parameters below are the output
+   from said fit.
+   =#
+   a = -0.02806171415983739
+   b = 89.51209910268079
+   c = 11918.608639939 # this is cal/mol
+   return (a*(T-b)^2 + c) / 239 # returns in kJ/mol
+end
+
+function Psat_HDO(T)
+   #=
+   Analytical expression for saturation vapor pressure of HDO, using analytical
+   latent heat for HDO determined from fitting to data from Jancso 1974.
+   The boiling temperature for HDO (100.7°C, 373.85K) and standard pressure are
+   used as reference temp/pressure. The gas constant for HDO was calculated as
+   R_HDO = kB/m, which probably came from Pierrehumbert's text.
+   =#
+   R_HDO = 434.8 # J/kgK
+   L_HDO = LHDO(T) * 1000 / 0.019 # kJ/mol * J/kJ * mol / kg = J / kg
+   T0 = 373.85 # boiling temp for liquid HDO
+   P0 = 101325 # standard pressure
+   return P0*exp(-(L_HDO/R_HDO)*(1/T - 1/T0))
+end
+
+HDOsat = map(x->Psat_HDO(x), map(Temp, alt))
+#HDOsat = H2Osat * DH
+
+# Set up the water profile -----------------------------------------------------
+if argarray[1] == "water"  # make constant in the lower atmosphere (well-mixed)
    H2Oinitfrac[find(x->x<60e5, alt)] = argarray[2]
 else
    H2Oinitfrac[find(x->x<30e5, alt)] = 1e-4
@@ -644,6 +673,8 @@ end
 for i in [1:length(H2Oinitfrac);]
     H2Oinitfrac[i] = H2Oinitfrac[i] < H2Osatfrac[i+1] ? H2Oinitfrac[i] : H2Osatfrac[i+1]
 end
+
+# use D/H ratio to set population of HDO
 HDOinitfrac = H2Oinitfrac * DH  # initial profile for HDO
 
 # add in a detached water vapor layer, which looks kinda like a gaussian packet
@@ -651,7 +682,7 @@ HDOinitfrac = H2Oinitfrac * DH  # initial profile for HDO
 detachedlayer = 1e-6*map(x->80.*exp(-((x-60)/12.5)^2),alt[2:end-1]/1e5)+H2Oinitfrac
 detachedlayer_HDO = detachedlayer * DH
 
-# this computes the total water column in precipitable microns
+# this computes the total water column in precipitable microns -----------------
 # n_col(molecules/cm2)/(molecules/mol)*(gm/mol)*(1cc/gm) = (cm)*(10^4μm/cm)
 # = precipitable μm
 # println("Total water col: ", sum(n_current[:H2O])*2e5)
@@ -1571,7 +1602,7 @@ co2exdata = readandskip(xsecfolder*"binnedCO2e.csv",',',Float64, skipstart = 4)
 h2oxdata = readandskip(xsecfolder*"h2oavgtbl.dat",'\t',Float64, skipstart = 4)
 
 # NEW - HDO crosssection. Data is for 298K.
-hdoxdata = readandskip(xsecfolder*"HDO.dat",'\t', Float64, skipstart=4) #deepcopy(h2oxdata)#
+hdoxdata = readandskip(xsecfolder*"HDO.dat",'\t', Float64, skipstart=12) #deepcopy(h2oxdata)#
 
 # H2O2 + HDO2 ==================================================================
 # the data in the table cover the range 190-260nm
@@ -1770,7 +1801,7 @@ function quantumyield(xsect::Array, arr)
 end
 
 # Change following line as needed depending on local machine
-const solarflux=readandskip(scriptdir*"marssolarphotonflux.dat",'\t',Float64,skipstart=4)[1:2000,:]
+const solarflux=readandskip(scriptdir*"marssolarphotonflux_solarmax.dat",'\t',Float64,skipstart=4)[1:2000,:]
 solarflux[:,2] = solarflux[:,2]/2
 
 absorber = Dict(:JCO2ion =>:CO2,
@@ -2068,6 +2099,11 @@ function update_Jrates!(n_current::Dict{Symbol, Array{Float64, 1}})
             n_current[j][ialt] = BLAS.dot(nlambda, solarabs[ialt], 1,
                                           crosssection[j][ialt+1], 1)
         end
+	   # this section for testing sensitivity to J rates
+        # if contains(string(j), "H2O") | contains(string(j), "HDO")
+        # if contains(string(j), "CO2toCOpO")
+	       # n_current[j] = n_current[j] ./ 10
+        # end
     end
 end
 
@@ -2075,7 +2111,7 @@ function timeupdate(mytime)
     for i = 1:15
         # following 2 lines are for troubleshooting/observing change over time
         plotatm()
-        println("dt: ", mytime)
+        #println("dt: ", mytime)
         update!(n_current, mytime)
     end
     # show()
@@ -2125,13 +2161,14 @@ towrite = "Finished convergence for $(argarray[1]) experiment with values: \n"
 if argarray[1]=="temp"
     towrite2 = "T_0 = $(argarray[2]), T_tropo = $(argarray[3]), T_exo = $(argarray[4]), water init = 1e-4"
 elseif argarray[1]=="water"
-    towrite2 = "T_0 = 209, T_tropo = 125, T_exo = 240, water init = $(argarray[2])"
+    towrite2 = "T_0 = 192.0, T_tropo =  110.0, T_exo = 199.0, water init = $(argarray[2])"
 elseif argarray[1]=="dh"
-    towrite2 = "T=mean, water=1e-4, DH=$(argarray[2])"
+    towrite2 = "T_0 = 192.0, T_tropo =  110.0, T_exo = 199.0, water=1e-4, DH=$(argarray[2])"
 end
 f = open(experimentdir*extfn*"/convergence_"*extfn*".txt", "w")
 write(f, towrite)
 write(f, towrite2)
+write(f, "NOTE: this simulation was run with SOLAR MAX values")
 close(f)
 
-println("ALERT: Finished convergence")#
+println("ALERT: Finished convergence")

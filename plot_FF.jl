@@ -51,9 +51,9 @@ function conc_over_time_molecH(rf)
     return conc0_h2, conc0_hd
 end
 
-function calcFractionation(rfH, rfD, p, titleext="", poster=false)
+function plot_FF(rfH, rfD, p, titleext="", poster=false)
     #=
-    Creates a plot of R over time for each ppm and altitude.
+    Creates a plot of fractionation factor over time for each ppm and altitude.
 
     rfH: readfile for H escape flux
     rfD: readfile for D escape flux
@@ -121,10 +121,10 @@ function calcFractionation(rfH, rfD, p, titleext="", poster=false)
     end
 
     # make some arrays to hold all the R values --------------------------------
-    R20_all = Float64[]
-    R40_all = Float64[]
-    R60_all = Float64[]
-    R80_all = Float64[]
+    FF20_all = Float64[]
+    FF40_all = Float64[]
+    FF60_all = Float64[]
+    FF80_all = Float64[]
 
     alt_all = Array{Float64}(6)
 
@@ -141,25 +141,25 @@ function calcFractionation(rfH, rfD, p, titleext="", poster=false)
         col = colors[i]
         lbl = lbls[i]
 
-        R20 = 2*(flux20D[k]./flux20H[k])./(hdo20[k]./h2o20[k])
-        R40 = 2*(flux40D[k]./flux40H[k])./(hdo40[k]./h2o40[k])
-        R60 = 2*(flux60D[k]./flux60H[k])./(hdo60[k]./h2o60[k])
-        R80 = 2*(flux80D[k]./flux80H[k])./(hdo80[k]./h2o80[k])
+        FF20 = 2*(flux20D[k]./flux20H[k])./(hdo20[k]./h2o20[k])
+        FF40 = 2*(flux40D[k]./flux40H[k])./(hdo40[k]./h2o40[k])
+        FF60 = 2*(flux60D[k]./flux60H[k])./(hdo60[k]./h2o60[k])
+        FF80 = 2*(flux80D[k]./flux80H[k])./(hdo80[k]./h2o80[k])
 
         # arrays of all the values for each ppm
-        append!(R20_all, R20)
-        append!(R40_all, R40)
-        append!(R60_all, R60)
-        append!(R80_all, R80)
+        append!(FF20_all, FF20)
+        append!(FF40_all, FF40)
+        append!(FF60_all, FF60)
+        append!(FF80_all, FF80)
 
         # averages for each altitude.
-        alt_all[Int(k/20)] = mean(mean([R20, R40, R60, R80])) # mean first across ppm, then over time.
+        alt_all[Int(k/20)] = mean(mean([FF20, FF40, FF60, FF80])) # mean first across ppm, then over time.
 
         # plot
-        ax[:semilogx](times, R20, color=col, label=lbl, linestyle=linestyles[1])
-        ax[:semilogx](times, R40, color=col, linestyle=linestyles[2])
-        ax[:semilogx](times, R60, color=col, linestyle=linestyles[3])
-        ax[:semilogx](times, R80, color=col, linestyle=linestyles[4])
+        ax[:semilogx](times, FF20, color=col, label=lbl, linestyle=linestyles[1])
+        ax[:semilogx](times, FF40, color=col, linestyle=linestyles[2])
+        ax[:semilogx](times, FF60, color=col, linestyle=linestyles[3])
+        ax[:semilogx](times, FF80, color=col, linestyle=linestyles[4])
         i += 1
     end
 
@@ -196,14 +196,14 @@ function calcFractionation(rfH, rfD, p, titleext="", poster=false)
     for k in keyz
         col = colors[i]
         lbl = lbls[i]
-        R20 = 2*(flux20D[k]./flux20H[k])./(hdo20[k]./h2o20[k])
-        R40 = 2*(flux40D[k]./flux40H[k])./(hdo40[k]./h2o40[k])
-        R60 = 2*(flux60D[k]./flux60H[k])./(hdo60[k]./h2o60[k])
-        R80 = 2*(flux80D[k]./flux80H[k])./(hdo80[k]./h2o80[k])
-        ax[:semilogx](times, R20, color=col, label=lbl, linestyle=linestyles[1])
-        ax[:semilogx](times, R40, color=col, linestyle=linestyles[2])
-        ax[:semilogx](times, R60, color=col, linestyle=linestyles[3])
-        ax[:semilogx](times, R80, color=col, linestyle=linestyles[4])
+        FF20 = 2*(flux20D[k]./flux20H[k])./(hdo20[k]./h2o20[k])
+        FF40 = 2*(flux40D[k]./flux40H[k])./(hdo40[k]./h2o40[k])
+        FF60 = 2*(flux60D[k]./flux60H[k])./(hdo60[k]./h2o60[k])
+        FF80 = 2*(flux80D[k]./flux80H[k])./(hdo80[k]./h2o80[k])
+        ax[:semilogx](times, FF20, color=col, label=lbl, linestyle=linestyles[1])
+        ax[:semilogx](times, FF40, color=col, linestyle=linestyles[2])
+        ax[:semilogx](times, FF60, color=col, linestyle=linestyles[3])
+        ax[:semilogx](times, FF80, color=col, linestyle=linestyles[4])
         i += 1
     end
 
@@ -228,10 +228,10 @@ function calcFractionation(rfH, rfD, p, titleext="", poster=false)
 
     # R averages --------------------------------------------------------------
     open(pth*"R_averages.txt", "w") do f
-            write(f, "Avg R for 20 ppm: $(@sprintf("%.2e", mean(R20_all)))\n")
-            write(f, "Avg R for 40 ppm: $(@sprintf("%.2e", mean(R40_all)))\n")
-            write(f, "Avg R for 60 ppm: $(@sprintf("%.2e", mean(R60_all)))\n")
-            write(f, "Avg R for 80 ppm: $(@sprintf("%.2e", mean(R80_all)))\n")
+            write(f, "Avg R for 20 ppm: $(@sprintf("%.2e", mean(FF20_all)))\n")
+            write(f, "Avg R for 40 ppm: $(@sprintf("%.2e", mean(FF40_all)))\n")
+            write(f, "Avg R for 60 ppm: $(@sprintf("%.2e", mean(FF60_all)))\n")
+            write(f, "Avg R for 80 ppm: $(@sprintf("%.2e", mean(FF80_all)))\n")
 
             for i in range(1,6)
                 write(f, "Avg for alt $(i*20) km: $(@sprintf("%.2e", alt_all[i]))\n")
@@ -239,7 +239,181 @@ function calcFractionation(rfH, rfD, p, titleext="", poster=false)
     end
 end
 
-function calcFractionation_single(rfH, rfD, p, caseno="", titleext="", poster=false)
+function plotFF_2panes(rfH, rfD, p, titleext="", poster=false)
+    #=
+    Creates a plot of fractionation factor over time for each ppm and altitude.
+
+    rfH: readfile for H escape flux
+    rfD: readfile for D escape flux
+    p: path in which the results are located
+    titleext: optional string to append to the plot title
+    poster: whether to make font big or not
+    =#
+
+    pth = p*"/"
+    const times = h5read(rfH,"fluxes/times")  # read in the times
+    const fluxH = h5read(rfH,"fluxes/fluxvals")  # read in the flux values for H
+    const fluxD = h5read(rfD,"fluxes/fluxvals")  # read in the flux values
+
+    # for each ppm, fill dict with 1D array of variation vs altitude (altitudes are the dict keys)
+    flux80H = Dict{Float64,Array{Float64, 1}}()
+    flux20H = Dict{Float64,Array{Float64, 1}}()
+    flux40H = Dict{Float64,Array{Float64, 1}}()
+    flux60H = Dict{Float64,Array{Float64, 1}}()
+    flux80D = Dict{Float64,Array{Float64, 1}}()
+    flux20D = Dict{Float64,Array{Float64, 1}}()
+    flux40D = Dict{Float64,Array{Float64, 1}}()
+    flux60D = Dict{Float64,Array{Float64, 1}}()
+
+    # also, the concentrations of H2O and HDO at the ground. each is a time series.
+    h2o80 = Dict{Float64,Array{Float64, 1}}()
+    h2o20 = Dict{Float64,Array{Float64, 1}}()
+    h2o40 = Dict{Float64,Array{Float64, 1}}()
+    h2o60 = Dict{Float64,Array{Float64, 1}}()
+    hdo80 = Dict{Float64,Array{Float64, 1}}()
+    hdo20 = Dict{Float64,Array{Float64, 1}}()
+    hdo40 = Dict{Float64,Array{Float64, 1}}()
+    hdo60 = Dict{Float64,Array{Float64, 1}}()
+
+    for col_i in range(1, 6)
+        # in these pairs, each dictionary key is an col_i (e.g. 40) and each value is the
+        # list of ppms. index order is sheet, column, row. sht 1 80ppm; sht 2 20ppm;
+        # sht 3 40 ppm; sheet 4 60ppm
+
+        # get the altitude for ease of use.
+        alt = fluxH[1, col_i, 2]
+
+        # ppm 80
+        flux80H[alt] =  fluxH[1, col_i, :][3:end-1]
+        flux80D[alt] =  fluxD[1, col_i, :][3:end-1]
+        fn = pth*"ppm_80_alt_"*string(Int(alt))*".h5"
+        h2o80[alt], hdo80[alt] = conc_over_time_water(fn)
+
+        # ppm 20
+        flux20H[alt] = fluxH[2, col_i, :][3:end-1]     # first argument should be 2 if doing all ppm
+        flux20D[alt] = fluxD[2, col_i, :][3:end-1]     # first argument should be 2 if doing all ppm
+        fn = pth*"ppm_20_alt_"*string(Int(alt))*".h5"
+        h2o20[alt], hdo20[alt] = conc_over_time_water(fn)
+
+        # ppm 40
+        flux40H[alt] = fluxH[3, col_i, :][3:end-1]
+        flux40D[alt] = fluxD[3, col_i, :][3:end-1]
+        fn = pth*"ppm_40_alt_"*string(Int(alt))*".h5"
+        h2o40[alt], hdo40[alt] = conc_over_time_water(fn)
+
+        # ppm 60
+        flux60H[alt] = fluxH[4, col_i, :][3:end-1]
+        flux60D[alt] = fluxD[4, col_i, :][3:end-1]
+        fn = pth*"ppm_60_alt_"*string(Int(alt))*".h5"
+        h2o60[alt], hdo60[alt] = conc_over_time_water(fn)
+    end
+
+    # make some arrays to hold all the R values --------------------------------
+    FF20_all = Float64[]
+    FF40_all = Float64[]
+    FF60_all = Float64[]
+    FF80_all = Float64[]
+
+    alt_all = Array{Float64}(6)
+
+    # stuff for all plots ------------------------------------------------------
+    keyz = sort(collect(keys(flux20H)))
+    colors = ["cornflowerblue", "blue", "silver", "dimgray", "salmon", "red"]
+    lbls = ["20 km", "40 km", "60 km", "80 km", "100 km", "120 km"]
+    linestyles = ["-", "-", "-", "-"] #"--", "-.", ":"] # toggle for styles
+
+    # PLOT ---------------------------------------------------------------------
+    fig, ax = subplots(1, 2, figsize=(20,10))
+    i = 1
+    for k in keyz
+        col = colors[i]
+        lbl = lbls[i]
+
+        FF20 = 2*(flux20D[k]./flux20H[k])./(hdo20[k]./h2o20[k])
+        FF40 = 2*(flux40D[k]./flux40H[k])./(hdo40[k]./h2o40[k])
+        FF60 = 2*(flux60D[k]./flux60H[k])./(hdo60[k]./h2o60[k])
+        FF80 = 2*(flux80D[k]./flux80H[k])./(hdo80[k]./h2o80[k])
+
+        # arrays of all the values for each ppm
+        append!(FF20_all, FF20)
+        append!(FF40_all, FF40)
+        append!(FF60_all, FF60)
+        append!(FF80_all, FF80)
+
+        # averages for each altitude.
+        alt_all[Int(k/20)] = mean(mean([FF20, FF40, FF60, FF80])) # mean first across ppm, then over time.
+
+        # the short term plot
+        ax[1, 1][:semilogx](times, FF20, color=col, label=lbl, linestyle=linestyles[1])
+        ax[1, 1][:semilogx](times, FF40, color=col, linestyle=linestyles[2])
+        ax[1, 1][:semilogx](times, FF60, color=col, linestyle=linestyles[3])
+        ax[1, 1][:semilogx](times, FF80, color=col, linestyle=linestyles[4])
+
+        # the long term plot
+        ax[2, 1][:semilogx](times, FF20, color=col, label=lbl, linestyle=linestyles[1])
+        ax[2, 1][:semilogx](times, FF40, color=col, linestyle=linestyles[2])
+        ax[2, 1][:semilogx](times, FF60, color=col, linestyle=linestyles[3])
+        ax[2, 1][:semilogx](times, FF80, color=col, linestyle=linestyles[4])
+        i += 1
+    end
+
+    # control font sizes for poster making
+    if poster==true
+        fs = Dict("ticks"=>24, "labels"=>28, "legend"=>18, "title"=>30, "stitle"=>34)
+    elseif poster==false
+        fs = Dict("ticks"=>16, "labels"=>20, "legend"=>14, "title"=>22, "stitle"=>24)
+    end
+
+    # plot label stuff
+    ax[1, 1][:tick_params](axis="both", which="both", labelsize=fs["ticks"])
+    ax[1, 1][:set_xlabel]("Time (seconds)", fontsize=fs["labels"])
+    ax[1, 1][:set_ylabel]("Fractionation factor", fontsize=fs["labels"])
+    ax[1, 1][:set_xlim](10^1,10^7)
+    ax[1, 1][:xaxis][:grid](which="major", color="gainsboro")
+    ax[1, 1][:yaxis][:grid](which="minor", color="gainsboro")
+    ax[1, 1][:set_title]("1 year", fontsize=fs["title"])
+    ax[2, 1][:tick_params](axis="both", which="both", labelsize=fs["ticks"])
+    ax[2, 1][:set_xlabel]("Time (seconds)", fontsize=fs["labels"])
+    ax[2, 1][:set_ylabel]("Fractionation factor", fontsize=fs["labels"])
+    ax[2, 1][:set_xlim](10^1,10^15)
+    ax[2, 1][:xaxis][:grid](which="major", color="gainsboro")
+    ax[2, 1][:yaxis][:grid](which="minor", color="gainsboro")
+    ax[2, 1][:set_title]("10 My", fontsize=fs["title"])
+    legend(fontsize=fs["legend"], loc="upper left")
+
+    tight_layout(rect=[0, 0.03, 1, 0.95]) # use if you want to do a suptitle: rect=[0, 0.03, 1, 0.95]
+
+    # make the suptitle
+    junk = split(titleext, "_")
+    if junk[1]=="temp"
+        suptitle("D/H Fractionation, "*L"T_{surf}="*"$(junk[2]), "*L"T_{tropo}="*"$(junk[3]), "*L"T_{exo}="*"$(junk[4])", fontsize=fs["stitle"])
+    elseif junk[1]=="water"
+        suptitle("D/H Fractionation, "*L"Water fraction="*"$(junk[2])", fontsize=fs["stitle"])
+    elseif junk[1] == "dh"
+        suptitle("D/H Fractionation, "*L"D/H="*"$(junk[2])", fontsize=fs["stitle"])
+    end
+
+    fnbase = "FF"
+    if poster==true
+        savefig(pth*fnbase*"_poster.png", bbox_inches="tight")
+    elseif poster==false
+        savefig(pth*fnbase*".png", bbox_inches="tight")
+    end
+
+    # FF averages --------------------------------------------------------------
+    open(pth*"FF_averages.txt", "w") do f
+        write(f, "Avg FF for 20 ppm: $(@sprintf("%.2e", mean(FF20_all)))\n")
+        write(f, "Avg FF for 40 ppm: $(@sprintf("%.2e", mean(FF40_all)))\n")
+        write(f, "Avg FF for 60 ppm: $(@sprintf("%.2e", mean(FF60_all)))\n")
+        write(f, "Avg FF for 80 ppm: $(@sprintf("%.2e", mean(FF80_all)))\n")
+
+        for i in range(1,6)
+            write(f, "Avg for alt $(i*20) km: $(@sprintf("%.2e", alt_all[i]))\n")
+        end
+    end
+end
+
+function plotFF_yungcases(rfH, rfD, p, caseno="", titleext="", poster=false)
     pth = p*"Case "*caseno*"/"
     const times = h5read(rfH,"fluxes/times")  # read in the times
     const fluxH_data = h5read(rfH,"fluxes/fluxvals")  # read in the flux values for H
@@ -406,7 +580,9 @@ function calcPopRatio(p)
     show()
 end
 
-lead = "/data/GoogleDrive/"#"/home/emc/GoogleDrive/"#
+
+lead = "/data/GDrive-CU/"
+# lead = "/home/emc/GDrive-CU/"
 
 # for doing Yung experiments
 # P = lead*"Phys/LASP/chaffincode-working/Yung-With-Old-Water/"#
@@ -418,10 +594,8 @@ lead = "/data/GoogleDrive/"#"/home/emc/GoogleDrive/"#
 
 # for our experiments
 expfolder = isdefined(:ARGS) ? ARGS[1] : println("Please use command line args")
-# P = lead*"Phys/LASP/chaffincode-working/"*ARGS[1]*"/"#
-P = "/data/VaryTW/"*expfolder
+P = lead*"Research/Results/"*expfolder
 fH = P*"/H_esc_flux_history.h5"
 fD = P*"/D_esc_flux_history.h5"
-calcFractionation(fH, fD, P, "", true)
+plotFF_2panes(fH, fD, P, expfolder, true)
 
-#calcPopRatio(P)

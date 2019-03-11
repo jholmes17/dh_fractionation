@@ -15,7 +15,7 @@ elseif arg_from_rnp[1] == "dh"
 end
 
 @eval @everywhere extfn=$extfn
-@everywhere include("setup_photochemistry.jl") # NOTE: change this as needed
+@everywhere include("setup_photochemistry.jl") 
 @everywhere @time update!(n_current,0.)
 
 # Run the simulation with logarithmic time steps
@@ -24,9 +24,8 @@ end
 @everywhere append!(timediff,3.3e6*3.14e7*ones(Float64,300))
 
 # identify the converged test case file NOTE: fix all this as needed
-scriptdir = "/data/GoogleDrive/Phys/LASP/chaffincode-working/" # the main script directory
-experimentdir = "/data/VaryTW_Ana/"  # used for when experiments stored on desktop
-# readfile = scriptdir*extfn*"/converged_standardwater_D_"*extfn*".h5"  # if experiments stored in google drive
+scriptdir = "/data/GDrive-CU/Research/chaffincode-working/" # the main script directory
+experimentdir = "/data/GDrive-CU/Research/Results/"  
 readfile = experimentdir*extfn*"/converged_standardwater_D_"*extfn*".h5"
 println("ALERT: Using file: ", readfile)
 
@@ -40,7 +39,7 @@ parmsvec = reshape(parmsvec,length(parmsvec))
 filenamevec = [string(experimentdir*extfn*"/ppm_", a[1], "_alt_", a[2], ".h5")
                for a in parmsvec]
 
-@everywhere function runwaterprofile(n_current, ppmadd, peakalt, dtlist, filename)\
+@everywhere function runwaterprofile(n_current, ppmadd, peakalt, dtlist, filename)
     #=
     n_current: matrix of concentrations by species and altitude, with water
                profile modified to include an enhanced water concentration of
@@ -285,24 +284,24 @@ oneyeartimepts = logspace(log10(1),log10(3.14e7),1000)
 oneyeartimediff = oneyeartimepts[2:end]-oneyeartimepts[1:end-1]
 n_converged = get_ncurrent(readfile)
 
-# Add water / run for a year / remove water / run for a year ===================
-println("running sim for one year")
-oneyearfn = experimentdir*extfn*"/one_year_response_to_80ppm_at_60km.h5"
-n_oneyear = runwaterprofile(n_converged, 80, 60, oneyeartimediff, oneyearfn)
+# Add water / run for a year / remove water / run for a year =================
+#println("running sim for one year")
+#oneyearfn = experimentdir*extfn*"/one_year_response_to_80ppm_at_60km.h5"
+#n_oneyear = runwaterprofile(n_converged, 80, 60, oneyeartimediff, oneyearfn)
 
-println("now removing the water")
-returnfn = experimentdir*extfn*"/one_year_response_to_80ppm_at_60km_return.h5"
-n_return = runwaterprofile(n_oneyear, 0., 60, oneyeartimediff, returnfn)
+#println("now removing the water")
+#returnfn = experimentdir*extfn*"/one_year_response_to_80ppm_at_60km_return.h5"
+#n_return = runwaterprofile(n_oneyear, 0., 60, oneyeartimediff, returnfn)
 
-# Add water and run for just over a year, no removal ===========================
+# Add water and run for just over a year, no removal ==========================
 # This runs the simulation for all added ppms and altitudes
 println("Now doing water profiles")
-pmap(x->runwaterprofile(n_current, x[1], x[2], timediff, x[3]),
-     [[p,f;] for (p,f) in zip(parmsvec,filenamevec)])
-println("Finished with water profiles")
+#pmap(x->runwaterprofile(n_current, x[1], x[2], timediff, x[3]),
+#     [[p,f;] for (p,f) in zip(parmsvec,filenamevec)])
+#println("Finished with water profiles")
 pmap(get_all_rates_and_fluxes,filenamevec)
 
-# Calculate H, D, H+D flux at exobase due to each experiment ===================
+# Calculate H, D, H+D flux at exobase due to each experiment ==================
 println("Doing H fluxes")
 Hfluxes = pmap(get_H_fluxes,filenamevec)
 lhfl = length(Hfluxes[1,1])

@@ -11,6 +11,7 @@ using LaTeXStrings
 function plot_Hflux(pth, readfile, dincluded, expfolder, poster=false)
     #=
     Creates a plot of H flux out of the atmosphere over time
+
     pth: parent folder of readfile. used to save figures properly
     readfile: file of H fluxes out of the atmosphere
     dincluded: whether it includes D fluxes. values: "H" or "H+D"
@@ -76,7 +77,7 @@ function plot_Hflux(pth, readfile, dincluded, expfolder, poster=false)
 
     # control font sizes for poster making
     if poster==true
-        fs = Dict("ticks"=>24, "labels"=>28, "legend"=>18, "title"=>30, "stitle"=>34)
+        fs = Dict("ticks"=>28, "labels"=>28, "legend"=>22, "title"=>30, "stitle"=>34)
     elseif poster==false
         fs = Dict("ticks"=>16, "labels"=>20, "legend"=>14, "title"=>22, "stitle"=>24)
     end
@@ -84,11 +85,13 @@ function plot_Hflux(pth, readfile, dincluded, expfolder, poster=false)
     # get the temperatures
     junk = split(expfolder, "_")
     if junk[1]=="temp"
-        titleext = L"T_{surf}="*"$(junk[2]), "*L"T_{tropo}="*"$(junk[3]), "*L"T_{exo}="*"$(junk[4])"
+        titleext = L"T_{0}="*"$(junk[2]), "*L"T_{mid}="*"$(junk[3]), "*L"T_{exo}="*"$(junk[4])"
     elseif junk[1]=="water"
         titleext = L"Water fraction="*"$(junk[2])"
+    elseif junk[1]=="dh"
+        titleext = L"D/H="*"$(junk[2])"
     else
-        println("PROBLEM")
+        titleext = junk
     end
 
     # labels and stuff
@@ -141,11 +144,13 @@ function plot_Hflux(pth, readfile, dincluded, expfolder, poster=false)
     # get the temperatures
     junk = split(expfolder, "_")
     if junk[1]=="temp"
-        titleext = L"T_{surf}="*"$(junk[2]), "*L"T_{tropo}="*"$(junk[3]), "*L"T_{exo}="*"$(junk[4])"
+        titleext = L"T_{0}="*"$(junk[2]), "*L"T_{mid}="*"$(junk[3]), "*L"T_{exo}="*"$(junk[4])"
     elseif junk[1]=="water"
         titleext = L"Water fraction="*"$(junk[2])"
+    elseif junk[1]=="dh"
+        titleext = L"D/H="*"$(junk[2])"
     else
-        println("PROBLEM")
+        titleext = junk
     end
 
     # labels and stuff
@@ -169,9 +174,11 @@ function plot_Hflux(pth, readfile, dincluded, expfolder, poster=false)
     end
 end
 
-lead = "/data/VaryTW_Ana/"#"/home/emc/GoogleDrive/"#
+#lead = "/data/GDrive-CU/"
+lead = "/home/emc/GDrive-CU/"
+
 expfolder = isdefined(:ARGS) ? ARGS[1] : println("Please use command line args")
-fbase = lead*expfolder*"/"
+fbase = lead*"Research/Results/VarWaterTemp/"*expfolder*"/"
 fH = fbase*"H_esc_flux_history.h5"
 plot_Hflux(fbase, fH, "H", expfolder, true)
 fHD = fbase*"H_and_D_esc_flux_history.h5"
