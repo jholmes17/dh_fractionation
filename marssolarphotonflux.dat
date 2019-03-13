@@ -1,7 +1,7 @@
-Mars-scaled Solar Photon Irradiance from LISIRD...http://lasp.colorado.edu/lisird/whi_ref_spectra/
-I resampled these to 1-nm intervals and converted to photons 
-assuming that all of the light was at the center of the bin.
-Wavelength [nm]	Spectral Irradiance [ph/cm2/s/nm]
+#Mars-scaled Solar Photon Irradiance from LISIRD...http://lasp.colorado.edu/lisird/whi_ref_spectra/
+#I resampled these to 1-nm intervals and converted to photons 
+#assuming that all of the light was at the center of the bin.
+#Wavelength [nm]	Spectral Irradiance [ph/cm2/s/nm]
 0.5	47873.64737946282
 1.5	3.9576590419917475e6
 2.5	8.480191368076537e6

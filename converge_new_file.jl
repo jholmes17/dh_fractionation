@@ -1,4 +1,3 @@
-
 # This julia code contains a photochemical model of the Martian
 # atmosphere prepared by Mike Chaffin, originally for the 8th
 # International Conference on Mars, held at CalTech in July 2014.
@@ -170,25 +169,33 @@ end
 ###################### Load Converged Test Case from File ######################
 ################################################################################
 
-# Location of main scripts and convergence files. Use 2nd line if in Google drive
+# Location of main scripts and convergence files. Use 2nd line if on laptop
 scriptdir = "/data/GDrive-CU/Research/chaffincode-working/"
-# scriptdir = "/home/emc/GoogleDrive/Phys/LASP/chaffincode-working/"
+#scriptdir = "/home/emc/GDrive-CU/Research/chaffincode-working/"
 
 # Storage location for experiment results
-experimentdir = "/data/GDrive-CU/Research/Results/VarWaterTemp/"  # where experiments are stored on hard drive
+experimentdir = "/data/GDrive-CU/Research/Results/"  # where experiments are stored on hard drive
 #experimentdir = "/home/emc/GoogleDrive/Research/Results/"
 
 # get command line arguments sent with run_and_plot.jl. format:
 # temp Tsurf Ttropo Texo ---- OR ---- water mixingratio
 # examples: temp 192 110 199      water 1e-3
-argarray = isdefined(:arg_from_rnp) ? arg_from_rnp : "ARGS BROKEN"
-filebase = isdefined(:extfn) ? extfn : "BROKEN"
-println("ALERT: running sim for $(filebase)")
+argarray = Any[ARGS[i] for i in 1:1:length(ARGS)]
+
+# set up the extension to the filename (extfn). this code is for temp/water
+# variation experiments, can remove this block later
+if argarray[1] == "temp"
+    extfn = "temp_$(argarray[2])_$(argarray[3])_$(argarray[4])"
+elseif argarray[1] == "water"
+    extfn = "water_$(argarray[2])"
+elseif argarray[1] == "dh"
+    extfn = "dh_$(argarray[2])"
+end
+
+println("ALERT: running sim for $(extfn)")
 
 # Set up the converged file to read from and load the simulation state at init.
-# use second line if in google drive
-readfile = experimentdir*extfn*"/converged_standardwater_D_"*extfn*".h5"
-# readfile = scriptdir * "converged_standardwater_D_"*extfn*".h5"
+readfile = scriptdir*"converged_standardwater.h5"
 println("ALERT: Using file: ", readfile)
 const alt=h5read(readfile,"n_current/alt")
 n_current = get_ncurrent(readfile)
@@ -214,13 +221,6 @@ const mH = 1.67e-27;            # kg
 # mars parameters
 const marsM = 0.1075*5.972e24;  # kg
 const radiusM = 3396e5;         # cm
-
-# General D/H ratio for mars, 5.5*SMOW, Atmosphere & Climate of Mars 2017
-if argarray[1] != "dh"
-    DH = 5.5 * 1.6e-4        # SMOW value from Yung 1988
-elseif argarray[1] == "dh"
-    DH = argarray[2] * 1.6e-4
-end
 
 # array of symbols for each species
 const fullspecieslist = [:CO2, :O2, :O3, :H2, :OH, :HO2, :H2O, :H2O2, :O, :CO,
@@ -343,8 +343,8 @@ reactionnet = [   #Photodissociation
              [[:H2O], [:H, :OH], :JH2OtoHpOH],
              [[:H2O], [:H2, :O1D], :JH2OtoH2pO1D],
              [[:H2O], [:H, :H, :O], :JH2OtoHpHpO],
-             [[:HDO], [:H, :OD], :JHDOtoHpOD], # TODO: check this is half of JH2OtoHpOH!
-             [[:HDO], [:D, :OH], :JHDOtoDpOH], # TODO: check this is half of JH2OtoHpOH!
+             [[:HDO], [:H, :OD], :JHDOtoHpOD], 
+             [[:HDO], [:D, :OH], :JHDOtoDpOH], 
              [[:HDO], [:HD, :O1D], :JHDOtoHDpO1D], # added 3/28, inspiration from Yung89
              [[:HDO], [:H, :D, :O], :JHDOtoHpDpO], # added 3/28, inspiration from Yung89
              [[:H2O2], [:OH, :OH], :JH2O2to2OH],
@@ -496,6 +496,43 @@ reactionnet = [   #Photodissociation
              [[:CO2pl, :HD], [:CO2pl, :H, :D], :((2/5)*8.7e-10)],
              ];
 
+################################################################################
+############################ ADD DEUTERATED SPECIES ############################
+################################################################################
+
+#=
+THIS SECTION ADDS NEW SPECIES AND J RATES TO THE CODEBASE.
+=#
+
+# General D/H ratio for mars, 5.5*SMOW, Atmosphere & Climate of Mars 2017
+if argarray[1] != "dh"
+    DH = 5.5 * 1.6e-4        # SMOW value from Yung 1988
+elseif argarray[1] == "dh"
+    DH = argarray[2] * 1.6e-4
+end
+
+# modify n_current
+n_current[:HDO] = n_current[:H2O] * DH
+n_current[:OD] = n_current[:OH] * DH
+n_current[:HDO2] = n_current[:H2O2] * DH
+n_current[:D] = n_current[:H] * DH
+n_current[:DO2] = n_current[:HO2] * DH
+n_current[:HD] = n_current[:H2] * DH
+n_current[:DOCO] = n_current[:HOCO] * DH
+
+# add the new Jrates --the values will get populated automatically
+n_current[:JHDOtoHpOD] = 0.0 * ones(length(alt))
+n_current[:JHDOtoDpOH] = 0.0 * ones(length(alt))
+n_current[:JHDO2toOHpOD] = 0.0 * ones(length(alt))
+n_current[:JHDOtoHDpO1D] = 0.0 * ones(length(alt)) # NEW 3/28
+n_current[:JHDOtoHpDpO] = 0.0 * ones(length(alt)) # NEW 3/28
+n_current[:JODtoOpD] = 0.0 * ones(length(alt)) # NEW 3/28
+n_current[:JHDtoHpD] = 0.0 * ones(length(alt)) # NEW 3/29
+n_current[:JDO2toODpO] = 0.0 * ones(length(alt)) # NEW 3/29
+n_current[:JHDO2toDO2pH] = 0.0 * ones(length(alt)) # NEW 3/30
+n_current[:JHDO2toHO2pD] = 0.0 * ones(length(alt)) # NEW 3/30
+n_current[:JHDO2toHDOpO1D] =  0.0 * ones(length(alt)) # NEW 3/30
+n_current[:JODtoO1DpD]  =  0.0 * ones(length(alt)) # NEW 3/30
 
 ################################################################################
 ####################### TEMPERATURE/PRESSURE PROFILES ##########################
@@ -532,6 +569,7 @@ function Tspl(z::Float64, lapserate=-1.4e-5, Tsurf=211, ztropo=50e5, zexo=200e5,
     # with no derivative at the exobase.
 end
 
+# my piecewise  TODO: Revert
 function Tpiecewise(z::Float64, Tsurf, Ttropo, Tinf, lapserate=-1.4e-5, ztropo=90e5)
     #=
     DO NOT MODIFY! If you want to change the temperature, define a
@@ -565,7 +603,7 @@ function Tpiecewise(z::Float64, Tsurf, Ttropo, Tinf, lapserate=-1.4e-5, ztropo=9
     end
 end
 
-#If changes to the temperature are needed, they should be made here
+#If changes to the temperature are needed, they should be made here  TODO: Revert
 if argarray[1]=="temp"
     Temp(z::Float64) = Tpiecewise(z, argarray[2], argarray[3], argarray[4])
 else
@@ -643,27 +681,6 @@ HDOinitfrac = H2Oinitfrac * DH  # initial profile for HDO
 # floating at 60km (Maltagliati 2013)
 detachedlayer = 1e-6*map(x->80.*exp(-((x-60)/12.5)^2),alt[2:end-1]/1e5)+H2Oinitfrac
 detachedlayer_HDO = detachedlayer * DH
-
-# Plot initial water profile with detatched layer - uncomment as needed
-# clf()
-# semilogx(H2Oinitfrac/1e-6, alt[2:end-1]/1e5, color="blue", linewidth=5,
-#          label=L"$H_2O$ base")
-# semilogx(detachedlayer/1e-6, alt[2:end-1]/1e5, color="red", linewidth=2,
-#          linestyle="--", label=L"enhanced $H_2O$")
-# semilogx(HDOinitfrac/1e-6, alt[2:end-1]/1e5, color="navy", linewidth=5,
-#          label=L"$HDO$ base")
-# semilogx(detachedlayer_HDO/1e-6, alt[2:end-1]/1e5, color="darkred", linewidth=2,
-#          linestyle="--", label=L"enhanced $HDO$")
-# xlabel("Volume Mixing Ratio [ppm]", fontsize=18)
-# ylabel("Altitude [km]", fontsize=18)
-# title(L"$H_2O$ and HDO model profiles", fontsize=20)
-# text(0.08, 59, "0.07ppm", color="darkred", size=16)
-# text(5, 57, "80ppm", color="red", size=16)
-# ax = gca()
-# ax[:tick_params]("both",labelsize=16)
-# legend(fontsize=14)
-# savefig(experimentdir*extfn*"/waterprofs_80ppm.png")
-# show()
 
 # this computes the total water column in precipitable microns -----------------
 # n_col(molecules/cm2)/(molecules/mol)*(gm/mol)*(1cc/gm) = (cm)*(10^4μm/cm)
@@ -1557,7 +1574,7 @@ end
     end
 
     update_Jrates!(n_current)
-    #plotatm()
+    # plotatm() #TODO turn me off
 end #update!
 
 ################################################################################
@@ -1585,7 +1602,7 @@ co2exdata = readandskip(xsecfolder*"binnedCO2e.csv",',',Float64, skipstart = 4)
 h2oxdata = readandskip(xsecfolder*"h2oavgtbl.dat",'\t',Float64, skipstart = 4)
 
 # NEW - HDO crosssection. Data is for 298K.
-hdoxdata = readandskip(xsecfolder*"HDO.dat",'\t', Float64, skipstart=12)
+hdoxdata = readandskip(xsecfolder*"HDO.dat",'\t', Float64, skipstart=12) #deepcopy(h2oxdata)#
 
 # H2O2 + HDO2 ==================================================================
 # the data in the table cover the range 190-260nm
@@ -1947,6 +1964,7 @@ setindex!(crosssection,
           fill(quantumyield(h2oxdata,((x->true, 0),)),length(alt)),
           :JH2OtoHpHpO)
 
+# TODO: change back to hdoxsect
 # HDO + hν -> H + OD
 setindex!(crosssection,
           fill(quantumyield(hdoxdata,((x->x<145, 0.5*0.89),(x->x>145, 0.5*1))),length(alt)),
@@ -2081,6 +2099,11 @@ function update_Jrates!(n_current::Dict{Symbol, Array{Float64, 1}})
             n_current[j][ialt] = BLAS.dot(nlambda, solarabs[ialt], 1,
                                           crosssection[j][ialt+1], 1)
         end
+	   # this section for testing sensitivity to J rates
+        # if contains(string(j), "H2O") | contains(string(j), "HDO")
+        # if contains(string(j), "CO2toCOpO")
+	       # n_current[j] = n_current[j] ./ 10
+        # end
     end
 end
 
@@ -2088,28 +2111,64 @@ function timeupdate(mytime)
     for i = 1:15
         # following 2 lines are for troubleshooting/observing change over time
         plotatm()
-        println("dt: ", mytime)
+        #println("dt: ", mytime)
         update!(n_current, mytime)
     end
     # show()
     ## yield()
 end
 
+################################################################################
+############################# CONVERGENCE CODE #################################
+################################################################################
+
+# set the water profiles
+n_current[:H2O] = H2Oinitfrac.*map(z->n_tot(n_current, z),alt[2:end-1])
+n_current[:HDO] = HDOinitfrac.*map(z->n_tot(n_current, z),alt[2:end-1])
+
+# initialize the figure so we can save it later
+figure(figsize=(20,12)) # initialize the plotatm figure
+
+# do the convergence
+[timeupdate(t) for t in [10.0^(1.0*i) for i in -3:14]]
+for i in 1:100
+    plotatm()
+    # println("dt: 1e14 iter $(i)")
+    update!(n_current, 1e14)
+end
+
+# write out the new converged file to matching folder. create folder if needed
+dircontents = readdir(experimentdir)
+println("Checking for existence of $(extfn) folder...")
+if extfn in dircontents
+    println("Folder $(extfn) exists")
+else
+    mkdir(experimentdir*extfn)
+end
+towrite = experimentdir*extfn*"/converged_standardwater_D_"*extfn*".h5"
+write_ncurrent(n_current, towrite)
+println("Wrote $(towrite)")
+
+# save the figure
+savefig(experimentdir*extfn*"/converged_"*extfn*".png")
+println("Saved figure to same folder")
 
 ################################################################################
 ################################# LOGGING ######################################
 ################################################################################
 
-towrite = "Finished simulation for $(argarray[1]) experiment with values: \n"
+towrite = "Finished convergence for $(argarray[1]) experiment with values: \n"
 if argarray[1]=="temp"
-    towrite2 = "T_0 = $(argarray[2]), T_tropo = $(argarray[3]), T_exo = $(argarray[4]), water init = 1e-4, DH=5.5"
+    towrite2 = "T_0 = $(argarray[2]), T_tropo = $(argarray[3]), T_exo = $(argarray[4]), water init = 1e-4"
 elseif argarray[1]=="water"
-    towrite2 = "T_0 = 192, T_tropo = 110, T_exo = 199, water init = $(argarray[2]), DH=5.5"
-elseif argarray[1] == "dh"
-    towrite2 = "T_0 = 192, T_tropo = 110, T_exo = 199, water init =1e-4, DH=$(argarray[2])"
+    towrite2 = "T_0 = 192.0, T_tropo =  110.0, T_exo = 199.0, water init = $(argarray[2])"
+elseif argarray[1]=="dh"
+    towrite2 = "T_0 = 192.0, T_tropo =  110.0, T_exo = 199.0, water=1e-4, DH=$(argarray[2])"
 end
-f = open(experimentdir*extfn*"/convergence_"*filebase*".txt", "w")
+f = open(experimentdir*extfn*"/convergence_"*extfn*".txt", "w")
 write(f, towrite)
 write(f, towrite2)
-write(f, "ALERT: ran with solar max condtions")
+write(f, "NOTE: this simulation was run with SOLAR MAX values")
 close(f)
+
+println("ALERT: Finished convergence")
