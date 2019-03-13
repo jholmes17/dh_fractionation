@@ -277,7 +277,7 @@ function plot_snap(readfile, timevec, poster, convergefile=false, init=false)
 end
 
 # FILL ME IN
-rf = "/data/VaryTW_Ana/good/temp_192_110_199/converged_standardwater_D_temp_192_110_199.h5"
+rf = "/data/GDrive-CU/Research/Results/VarWaterTemp/temp_192_110_199/converged_standardwater_D_temp_192_110_199.h5"
 # plot_snap(rf, [1], true)
 # plot_snap(rf, [606], true)
 # plot_snap(rf, [790], true)
