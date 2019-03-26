@@ -1,7 +1,9 @@
-#=
-Functions to estimate water lost from Mars.
-Formalized 1 February 2019
-=#
+################################################################################
+# Functions to estimate water lost from Mars.
+# Formalized 1 February 2019
+# Eryn Cangi
+# Currently tested for Julia: 0.7
+################################################################################
 
 
 function molec_to_GEL(molecules, HorH2O)
@@ -33,4 +35,4 @@ function GEL_to_molecule(GEL, HorH2O)
     end
 end
 
-*** FILL ME IN***
+#TODO: *** FILL ME IN***

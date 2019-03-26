@@ -1,3 +1,13 @@
+################################################################################
+# plot_water_profile.jl - Plots the water profile used in photochemistry 
+# experiment.
+#
+# Eryn Cangi
+# March 2019
+# Currently tested for Julia: 0.7
+################################################################################
+
+
 using HDF5
 using PyPlot
 
@@ -8,8 +18,8 @@ function plot_water_profile(thepath, thefile)#, packettype)
 
     readfile = thepath*thefile
 
-    const alt = h5read(readfile,"waterprofs/alt")  # read in the altitudes
-    const ppm = h5read(readfile,"waterprofs/ppm")  # read in the ppm
+    alt = h5read(readfile,"waterprofs/alt")  # read in the altitudes
+    ppm = h5read(readfile,"waterprofs/ppm")  # read in the ppm
 
     # for each center of the Gaussian ppm distribution, fill dict with 1D array of variation
     # vs altitude (altitudes are the dict keys)
@@ -18,7 +28,7 @@ function plot_water_profile(thepath, thefile)#, packettype)
     ppm40 = Dict{Float64,Array{Float64, 1}}()
     ppm60 = Dict{Float64,Array{Float64, 1}}()
 
-    for altitude in range(1, 6)
+    for altitude in range(1, length=6)
         # in these pairs, each dictionary key is an altitude (e.g. 40) and each value is the
         # list of ppms. index order is sheet, column, row. sht 1 80ppm; sht 2 20ppm;
         # sht 3 40 ppm; sheet 4 60ppm
@@ -40,14 +50,14 @@ function plot_water_profile(thepath, thefile)#, packettype)
     fig, ax = subplots(figsize=(6,8))
     keyz = sort(collect(keys(ppm20)))
     colors = ["cornflowerblue", "blue", "silver", "dimgray", "salmon", "red"]
-    i = 1
-    for key in keyz
+
+    for i in range(1, length=length(keyz))
+        key = keyz[i]
         color = colors[i]
         plot(ppm20[key], y, color)
         plot(ppm40[key], y, color)
         plot(ppm60[key], y, color)
         plot(ppm80[key], y, color)
-        i += 1
     end
 
     # place nice labels of ppm on plot
@@ -87,6 +97,6 @@ function plot_water_profile(thepath, thefile)#, packettype)
 end
 
 lead = "/home/emc/GDrive-CU/"
-exper = "Research/Results/VarWaterTemp/temp_192_110_199/"
+exper = "Research/Results/dh_5.5/"
 fn = "H_esc_flux_history.h5"
 plot_water_profile(lead*exper, fn)

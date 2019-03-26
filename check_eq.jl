@@ -3,21 +3,42 @@
 # Φ_O = 0.5Φ_{H+D}.
 # Eryn Cangi
 # 11 September 2018
+# Currently tested for Julia: 0.7
 ################################################################################
 using HDF5
 
-# fundamental constants
+# fundamental constants --------------------------------------------------------
 const boltzmannK = 1.38e-23;    # J/K
 const bigG = 6.67e-11;          # N m^2/kg^2
 const mH = 1.67e-27;            # kg
 const marsM = 0.1075*5.972e24;  # kg
 const radiusM = 3396e5;         # cm
-DH = 5.5 * 1.6e-4        # SMOW value from Yung 1988
+DH = 5.5 * 1.6e-4               # SMOW value from Yung 1988
 
-rf = "/data/VaryTW_Ana/" * ARGS[1] * "/converged_standardwater_D_" * ARGS[1] * ".h5"
+# Experiment type and loading the file -----------------------------------------
+# get arguments to use for accessing files 
+argarray = Any[ARGS[i] for i in 1:1:length(ARGS)] 
+if argarray[1] == "temp"
+    FNext = "temp_$(argarray[2])_$(argarray[3])_$(argarray[4])"
+else
+    FNext = "$(argarray[1])_$(argarray[2])"
+end
+
+# load readfile and altitude array
+# lead = "/data/GDrive-CU/Research/Results/"
+lead = "/home/emc/GDrive-CU/Research/Results/"
+rf = lead * FNext * "/converged_standardwater_D_" * FNext * ".h5"
 println(rf)
 alt = h5read(rf,"n_current/alt")
+
 const zmax = alt[end];
+
+# Functions --------------------------------------------------------------------
+function speciesbcs(species)
+    get(speciesbclist,
+        species,
+        ["f" 0.; "f" 0.])
+end
 
 function Tpiecewise(z::Float64, Tsurf, Ttropo, Tinf, lapserate=-1.4e-5, ztropo=90e5)
     #=
@@ -52,57 +73,7 @@ function Tpiecewise(z::Float64, Tsurf, Ttropo, Tinf, lapserate=-1.4e-5, ztropo=9
     end
 end
 
-if ARGS[2]=="temp"
-    Temp(z::Float64) = Tpiecewise(z, parse(Float64,ARGS[3]), parse(Float64,ARGS[4]), parse(Float64,ARGS[5]))
-elseif ARGS[2] == "water"
-    Temp(z::Float64) = Tpiecewise(z, 192.0, 110.0, 199.0)
-elseif ARGS[2] == "orig"
-    Temp(z::Float64) = Tpiecewise(z, 209.0, 125.0, 240.0)
-end
-
-Psat(T::Float64) = (133.3/(10^6 * boltzmannK * T))*(10^(-2445.5646/T + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 - 6.757169))
-# H2Osat is an array of H2O SVP in 1/cm^3, a number per volume, by altitude
-H2Osat = map(x->Psat(x), map(Temp, alt))
-HDOsat = H2Osat*DH
-
-function effusion_velocity(Texo::Float64, m::Float64)
-    #=
-    Returns effusion velocity for a species.
-    Texo: temperature of the exobase (upper boundary) in K
-    m: mass of one molecule of species in amu
-    =#
-    lambda = (m*mH*bigG*marsM)/(boltzmannK*Texo*1e-2*(radiusM+zmax))
-    vth=sqrt(2*boltzmannK*Texo/(m*mH))
-    v = 1e2*exp(-lambda)*vth*(lambda+1)/(2*pi^0.5)
-    return v
-end
-
-H_effusion_velocity = effusion_velocity(Temp(zmax),1.0)
-H2_effusion_velocity = effusion_velocity(Temp(zmax),2.0)
-D_effusion_velocity = effusion_velocity(Temp(zmax),2.0)
-HD_effusion_velocity = effusion_velocity(Temp(zmax),3.0)
-
-const speciesbclist=Dict(
-                :CO2=>["n" 2.1e17; "f" 0.],
-                :Ar=>["n" 2.0e-2*2.1e17; "f" 0.],
-                :N2=>["n" 1.9e-2*2.1e17; "f" 0.],
-                :H2O=>["n" H2Osat[1]; "f" 0.], # bc doesnt matter if H2O fixed
-                :HDO=>["n" HDOsat[1]; "f" 0.],
-                :O=>["f" 0.; "f" 1.2e8],
-                :H2=>["f" 0.; "v" H2_effusion_velocity],
-                :HD=>["f" 0.; "v" HD_effusion_velocity],
-                :H=>["f" 0.; "v" H_effusion_velocity],
-                :D=>["f" 0.; "v" D_effusion_velocity],
-               );
-
-function speciesbcs(species)
-    get(speciesbclist,
-        species,
-        ["f" 0.; "f" 0.])
-end
-
 function get_ncurrent(readfile)
-    const alt = h5read(readfile,"n_current/alt")
     n_current_tag_list = map(Symbol, h5read(readfile,"n_current/species"))
     n_current_mat = h5read(readfile,"n_current/n_current_mat");
     n_current = Dict{Symbol, Array{Float64, 1}}()
@@ -145,6 +116,54 @@ function get_H_fluxes(readfile)
     return Hfluxes
 end
 
+function effusion_velocity(Texo::Float64, m::Float64)
+    #=
+    Returns effusion velocity for a species.
+    Texo: temperature of the exobase (upper boundary) in K
+    m: mass of one molecule of species in amu
+    =#
+    lambda = (m*mH*bigG*marsM)/(boltzmannK*Texo*1e-2*(radiusM+zmax))
+    vth=sqrt(2*boltzmannK*Texo/(m*mH))
+    v = 1e2*exp(-lambda)*vth*(lambda+1)/(2*pi^0.5)
+    return v
+end
+
+# Set up non-function code that is necessary -----------------------------------
+if argarray[1]=="temp"
+    Temp(z::Float64) = Tpiecewise(z, parse(Float64,argarray[2]), 
+                                     parse(Float64,argarray[3]), 
+                                     parse(Float64,argarray[4]))
+elseif argarray[1] == "orig"
+    Temp(z::Float64) = Tpiecewise(z, 209.0, 125.0, 240.0)
+else
+    Temp(z::Float64) = Tpiecewise(z, 192.0, 110.0, 199.0)
+end
+
+Psat(T::Float64) = (133.3/(10^6 * boltzmannK * T))*(10^(-2445.5646/T + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 - 6.757169))
+# H2Osat is an array of H2O SVP in 1/cm^3, a number per volume, by altitude
+H2Osat = map(x->Psat(x), map(Temp, alt))
+HDOsat = H2Osat*DH
+
+H_effusion_velocity = effusion_velocity(Temp(zmax),1.0)
+H2_effusion_velocity = effusion_velocity(Temp(zmax),2.0)
+D_effusion_velocity = effusion_velocity(Temp(zmax),2.0)
+HD_effusion_velocity = effusion_velocity(Temp(zmax),3.0)
+
+const speciesbclist=Dict(
+                :CO2=>["n" 2.1e17; "f" 0.],
+                :Ar=>["n" 2.0e-2*2.1e17; "f" 0.],
+                :N2=>["n" 1.9e-2*2.1e17; "f" 0.],
+                :H2O=>["n" H2Osat[1]; "f" 0.], # bc doesnt matter if H2O fixed
+                :HDO=>["n" HDOsat[1]; "f" 0.],
+                :O=>["f" 0.; "f" 1.2e8],
+                :H2=>["f" 0.; "v" H2_effusion_velocity],
+                :HD=>["f" 0.; "v" HD_effusion_velocity],
+                :H=>["f" 0.; "v" H_effusion_velocity],
+                :D=>["f" 0.; "v" D_effusion_velocity],
+               );
+# ------------------------------------------------------------------------------
+
+# Calculate the flux ratio -----------------------------------------------------
 Of = 1.2e8
 Hf = get_H_fluxes(rf)
 HDf = get_H_and_D_fluxes(rf)
@@ -154,3 +173,4 @@ println("H+D flux: ", HDf)
 println("H flux: ", Hf)
 println("Ratio: ", HDf/Of)
 println()
+# ------------------------------------------------------------------------------

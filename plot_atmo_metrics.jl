@@ -1,9 +1,11 @@
-#-------------------------------------------------#
+################################################################################
 # Plot metrics of atmosphere like CO/O2, H2, O3.
 # currently assumes a bunch of sub-experiment folders.
 #
-# Eryn Cangi 11 March 2019
-#-------------------------------------------------#
+# Eryn Cangi 
+# 11 March 2019
+# Currently tested for Julia: 0.7
+################################################################################
 
 # modules ---------- #
 using PyPlot
@@ -13,7 +15,6 @@ using LaTeXStrings
 
 # utility functions ------------------------------------------------------------
 function get_ncurrent(readfile)
-    const alt = h5read(readfile,"n_current/alt")   #TODO: is this redundant?
     n_current_tag_list = map(Symbol, h5read(readfile,"n_current/species"))
     n_current_mat = h5read(readfile,"n_current/n_current_mat");
     n_current = Dict{Symbol, Array{Float64, 1}}()
@@ -26,7 +27,8 @@ end
 #-------------------------------------------------------------------------------
 
 numexp = 9  # number of experiments for which to plot values
-base = "/data/GDrive-CU/Research/Results/VarWaterTemp/"
+# base = "/data/GDrive-CU/Research/Results/VarWaterTemp/"
+base = "/home/emc/GDrive-CU/Research/Results/VarWaterTemp/"
 expfolders = ["temp_192_83_199", "temp_192_110_149", "temp_192_110_199", 
               "temp_240_110_199", "temp_192_138_199", "temp_192_110_249", 
               "water_1e-3", "water_1e-4", "water_1e-5"]
@@ -75,7 +77,7 @@ for i in 1:1:numexp
 end
 
 
-# Figures
+# Figures ----------------------------------------------------------------------
 fig = figure(figsize=(6,4))
 ax = gca()
 bar(collect(1:numexp), oxyvals_surf, zorder=2)

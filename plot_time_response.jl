@@ -2,8 +2,10 @@
 # plot_time_response.jl - Plots the response of the atmosphere at select
 # snapshots designated by time indices. Can plot all species, selected species,
 # or the top most populous species.
+#
 # Eryn Cangi
 # 31 August 2018
+# Currently tested for Julia: 0.7
 ################################################################################
 using PyPlot
 using HDF5
@@ -60,8 +62,8 @@ function plot_select_spec(readfile, timevec, poster, ext="")
 
     =#
 
-    const alt = h5read(readfile,"n_current/alt")  # read in the altitudes
-    const times = h5read(readfile,"n_current/timelist")  # read in the times
+    alt = h5read(readfile,"n_current/alt")  # read in the altitudes
+    times = h5read(readfile,"n_current/timelist")  # read in the times
 
     # read in species names and map them to symbols
     species = map(Symbol,h5read(readfile,"n_current/species"))
@@ -69,10 +71,10 @@ function plot_select_spec(readfile, timevec, poster, ext="")
     # make some latex-formatted labels
     for n in (1:length(species))
         if species_str[n][1] != 'J'
-            species_str[n] = replace(species_str[n], '3', "_3")
-            species_str[n] = replace(species_str[n], '2', "_2")
-            species_str[n] = replace(species_str[n], "1D", "(^1D)")
-            species_str[n] = replace(species_str[n], "pl", "^+")
+            species_str[n] = replace(species_str[n], '3' => "_3")
+            species_str[n] = replace(species_str[n], '2' => "_2")
+            species_str[n] = replace(species_str[n], "1D" => "(^1D)")
+            species_str[n] = replace(species_str[n], "pl" => "^+")
         end
     end
 
@@ -157,12 +159,12 @@ function plot_select_spec(readfile, timevec, poster, ext="")
     end
 
     # make a figure and set up some global labels
-    fig, ax = subplots(1,length(timevec), sharey=true, figsize=(25,5))
+    fig, ax = subplots(1, length(timevec), sharey=true, figsize=(25,5))
 
     # do not change the following and do not use tight_layout(), it conflicts
     subplots_adjust(wspace=0, bottom=0.15)
-    ax[1,1][:set_xlabel]("Volume Mixing Ratio [ppm]", fontsize=fs["labels"])
-    ax[1,1][:set_ylabel]("Altitude [km]", fontsize=fs["labels"])
+    ax[1][:set_xlabel]("Volume Mixing Ratio [ppm]", fontsize=fs["labels"])
+    ax[1][:set_ylabel]("Altitude [km]", fontsize=fs["labels"])
     y = alt[2:end-1]./10^5  # altitudes are always the same
     # stuff to put on return plots
     returntext = ["", "", "", ""]
@@ -182,7 +184,7 @@ function plot_select_spec(readfile, timevec, poster, ext="")
         ncurrent_vmr = deepcopy(ncurrent)
 
         # iterate over altitudes
-        for a in range(1,length(alt)-2)
+        for a in range(1, length=length(alt)-2)
             n_tot_this_alt = 0
 
             # including the following 2 loops separately is less code than
@@ -204,7 +206,7 @@ function plot_select_spec(readfile, timevec, poster, ext="")
         time = convert_secs(secs)
         key = ["years ", "days ", "hours "]
         timestr = ""
-        for t in range(1,length(time))
+        for t in range(1, length=length(time))
           if time[t] != 0
               timestr = timestr * "$(Int(time[t])) $(key[t])"
           end
@@ -217,7 +219,7 @@ function plot_select_spec(readfile, timevec, poster, ext="")
         # PLOT - SELECT SPECIES
         for (s, sstr) in zip(species, species_str)
             # only plot some of the most important species
-            if !contains(string(s), "J")  # do not plot J rates
+            if !occursin("J", string(s))  # do not plot J rates
                 if sstr in ["H_2O_2", "HDO_2", "DO_2", "HO_2", "HD", "H_2", "H", "D", "H_2O", "HDO", "O", "O_2", "CO_2"]
                     x = ncurrent_vmr[s]
                     # set line thicknesses
@@ -226,19 +228,19 @@ function plot_select_spec(readfile, timevec, poster, ext="")
                     else
                         lw = 1
                     end
-                    ax[i,1][:semilogx](x, y, linewidth=lw, alpha=0.85,
+                    ax[i][:semilogx](x, y, linewidth=lw, alpha=0.85,
                                        color=speciescolor[s],
                                        linestyle=speciesstyle[s])
 
                     # stagger labels between top and bottom of plot =, easier to read
                     if sstr in ["HDO_2", "H_2O_2", "D", "H_2", "O_2"]
-                        ax[i,1][:text](0.4*x[1], y[1]-12, latexstring(sstr),
+                        ax[i][:text](0.4*x[1], y[1]-12, latexstring(sstr),
                                        color=speciescolor[s], fontsize=fs["spec"])
                     elseif sstr=="CO_2"
-                        ax[i,1][:text](0.1*x[1], y[1]-12, latexstring(sstr),
+                        ax[i][:text](0.1*x[1], y[1]-12, latexstring(sstr),
                                        color=speciescolor[s], fontsize=fs["spec"])
                     else
-                        ax[i,1][:text](0.4*x[end], y[end]+4, latexstring(sstr),
+                        ax[i][:text](0.4*x[end], y[end]+4, latexstring(sstr),
                                        color=speciescolor[s], fontsize=fs["spec"])
                     end
 
@@ -246,16 +248,16 @@ function plot_select_spec(readfile, timevec, poster, ext="")
 
                 # title stuff
                 if ext==""
-                    ax[i,1][:set_title](timestr, fontsize=fs["title"])
+                    ax[i][:set_title](timestr, fontsize=fs["title"])
                 else
-                    ax[i,1][:text](10.0^-17, 180, returntext[i])
+                    ax[i][:text](10.0^-17, 180, returntext[i])
                 end
 
                 # set the xlim, ylim
-                ax[i,1][:set_ylim](-15,215)
-                ax[i,1][:set_xticks]([1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15])
-                #ax[i,1][:set_xlim](1e-17,5)
-                ax[i,1][:tick_params]("both",labelsize=fs["ticks"])
+                ax[i][:set_ylim](-15,215)
+                ax[i][:set_xticks]([1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15])
+                #ax[i][:set_xlim](1e-17,5)
+                ax[i][:tick_params]("both",labelsize=fs["ticks"])
 
             end
         end
@@ -272,8 +274,8 @@ function plot_all_spec(readfile, timevec, ext="")
     density to volume mixing ratio first.
     =#
 
-    const alt = h5read(readfile,"n_current/alt")  # read in the altitudes
-    const times = h5read(readfile,"n_current/timelist")  # read in the times
+    alt = h5read(readfile,"n_current/alt")  # read in the altitudes
+    times = h5read(readfile,"n_current/timelist")  # read in the times
 
     # read in species names and map them to symbols
     species = map(Symbol,h5read(readfile,"n_current/species"))
@@ -281,10 +283,10 @@ function plot_all_spec(readfile, timevec, ext="")
     # make some latex-formatted labels
     for n in (1:length(species))
         if species_str[n][1] != 'J'
-            species_str[n] = replace(species_str[n], '3', "_3")
-            species_str[n] = replace(species_str[n], '2', "_2")
-            species_str[n] = replace(species_str[n], "1D", "(^1D)")
-            species_str[n] = replace(species_str[n], "pl", "^+")
+            species_str[n] = replace(species_str[n], '3' => "_3")
+            species_str[n] = replace(species_str[n], '2' => "_2")
+            species_str[n] = replace(species_str[n], "1D" => "(^1D)")
+            species_str[n] = replace(species_str[n], "pl" => "^+")
         end
     end
 
@@ -362,8 +364,8 @@ function plot_all_spec(readfile, timevec, ext="")
     # make a figure and set up some global labels
     fig, ax = subplots(1,4, sharey=true, figsize=(18,5))
     subplots_adjust(wspace=0)
-    ax[1,1][:set_xlabel]("Volume Mixing Ratio [ppm]")
-    ax[1,1][:set_ylabel]("Altitude [km]")
+    ax[1][:set_xlabel]("Volume Mixing Ratio [ppm]")
+    ax[1][:set_ylabel]("Altitude [km]")
     y = alt[2:end-1]./10^5  # altitudes are always the same
     # stuff to put on return plots
     returntext = ["", "", "", ""]
@@ -383,7 +385,7 @@ function plot_all_spec(readfile, timevec, ext="")
         ncurrent_vmr = deepcopy(ncurrent)
 
         # iterate over altitudes
-        for a in range(1,length(alt)-2)
+        for a in range(1, length=length(alt)-2)
           n_tot_this_alt = 0
 
           # including the following 2 loops separately is less code than
@@ -405,7 +407,7 @@ function plot_all_spec(readfile, timevec, ext="")
         time = convert_secs(secs)
         key = ["years ", "days ", "hours "]
         timestr = ""
-        for t in range(1,length(time))
+        for t in range(1, length=length(time))
           if time[t] != 0
               timestr = timestr * "$(Int(time[t])) $(key[t])"
           end
@@ -427,23 +429,22 @@ function plot_all_spec(readfile, timevec, ext="")
                     lw = 1
                 end
 
-                ax[i,1][:semilogx](x, y, linewidth=1, alpha=0.85,
-                                   color=speciescolor[s],
+                ax[i][:semilogx](x, y, alpha=0.85, color=speciescolor[s],
                                    linestyle=speciesstyle[s], linewidth=lw)
                 # stagger labels between top and bottom of plot =, easier to read
                 if sstr in ["HDO_2", "H_2O_2", "HD", "H_2", "H", "CO_2", "CO", "Ar", "O(^1D)", "O"]
-                    ax[i,1][:text](0.2*x[1], y[1]-9, latexstring(sstr),
+                    ax[i][:text](0.2*x[1], y[1]-9, latexstring(sstr),
                                    color=speciescolor[s])
                 else
-                    ax[i,1][:text](0.2*x[end], y[end]+4, latexstring(sstr),
+                    ax[i][:text](0.2*x[end], y[end]+4, latexstring(sstr),
                                    color=speciescolor[s])
                 end
 
                 # title stuff
                 if ext==""
-                    ax[i,1][:set_title](timestr)
+                    ax[i][:set_title](timestr)
                 else
-                    ax[i,1][:text](10.0^-17, 180, returntext[i])
+                    ax[i][:text](10.0^-17, 180, returntext[i])
                 end
             end
         end
@@ -454,15 +455,15 @@ function plot_all_spec(readfile, timevec, ext="")
 end
 
 #TODO: fix this so that it is like select_spec to ensure best plotting
-function plot_top_spec(readfile, timevec, ext="")
+function plot_top_spec(readfile, timevec, poster, ext="")
     #=
     Creates a plot of the most populous species volume mixing ratio by altitude
     at the equilibrium case.
 
     timevec: vector of times at which to make plots
     =#
-    const alt = h5read(readfile,"n_current/alt")  # read in the altitudes
-    const times = h5read(readfile,"n_current/timelist")  # read in the times
+    alt = h5read(readfile,"n_current/alt")  # read in the altitudes
+    times = h5read(readfile,"n_current/timelist")  # read in the times
 
     # read in species names and map them to symbols
     species = map(Symbol,h5read(readfile,"n_current/species"))
@@ -470,14 +471,14 @@ function plot_top_spec(readfile, timevec, ext="")
     # make some latex-formatted labels
     for n in (1:length(species))
         if species_str[n][1] != 'J'
-            species_str[n] = replace(species_str[n], '3', "_3")
-            species_str[n] = replace(species_str[n], '2', "_2")
-            species_str[n] = replace(species_str[n], "1D", "(^1D)")
-            species_str[n] = replace(species_str[n], "pl", "^+")
+            species_str[n] = replace(species_str[n], '3' => "_3")
+            species_str[n] = replace(species_str[n], '2' => "_2")
+            species_str[n] = replace(species_str[n], "1D" => "(^1D)")
+            species_str[n] = replace(species_str[n], "pl" => "^+")
         end
     end
 
-    # colors: same dict as in setup_photochemistry.
+    # colors
     speciescolor = Dict(
         # H group
         :H => "#ff0000", # red
@@ -514,10 +515,54 @@ function plot_top_spec(readfile, timevec, ext="")
         :Ar => "#808080",
         :N2 => "#cccccc",);
 
+    speciesstyle = Dict(
+        # H group
+        :H => "-",
+        :D => "--",
+        :H2 => "-",
+        :HD => "--",
+
+        # hydroxides
+        :OH => "-", # Lilac
+        :OD => "--", # purple
+
+        # water group (roughly, I ain't a chemist)
+        :H2O => "-",  # cornflower blue
+        :HDO => "--",  # navy
+        :H2O2 => "-", # nice blue
+        :HDO2 => "--", # true blue
+        :HO2 => "-",  # teal
+        :DO2 => "--",  # dark teal
+
+        # O group
+        :O1D => "-",  # olive
+        :O => "-",    # forest green
+        :O2 => "-",    # kelly/grass green
+        :O3 => "-",   # light green
+
+        # CO group
+        :CO2 => "-",   # dark peach
+        :CO2pl => "-", # brown
+        :CO => "-",    # orange
+        :HOCO => "-", #tannish
+        :DOCO => "--",
+
+        # nonreactants
+        :Ar => "-",
+        :N2 => "-",);
+
+    # Font size settings
+    if poster==true
+        fs = Dict("ticks"=>16, "labels"=>22, "legend"=>18, "title"=>26, "spec"=>14)
+    elseif poster==false
+        fs = Dict("ticks"=>16, "labels"=>20, "legend"=>14, "title"=>22, "spec"=>14)
+    end
+
     # make a figure and set up some global labels
-    fig, ax = subplots(1,4, sharey=true, figsize=(18,5))
-    ax[1,1][:set_xlabel]("Volume Mixing Ratio [ppm]")
-    ax[1,1][:set_ylabel]("Altitude [km]")
+    fig, ax = subplots(1,4, sharey=true, figsize=(25,5))# do not change the following and do not use tight_layout(), it conflicts
+    subplots_adjust(wspace=0, bottom=0.15)
+    ax[1][:set_xlabel]("Volume Mixing Ratio [ppm]", fontsize=fs["labels"])
+    ax[1][:set_ylabel]("Altitude [km]", fontsize=fs["labels"])
     y = alt[2:end-1]./10^5  # altitudes are always the same
     # stuff to put on return plots
     returntext = ["", "", "", ""]
@@ -537,7 +582,7 @@ function plot_top_spec(readfile, timevec, ext="")
         ncurrent_vmr = deepcopy(ncurrent)
 
         # iterate over altitudes
-        for a in range(1,length(alt)-2)
+        for a in range(1, length=length(alt)-2)
             n_tot_this_alt = 0
 
             # including the following 2 loops separately is less code than
@@ -559,7 +604,7 @@ function plot_top_spec(readfile, timevec, ext="")
         time = convert_secs(secs)
         key = ["years ", "days ", "hours "]
         timestr = ""
-        for t in range(1,length(time))
+        for t in range(1, length=length(time))
             if time[t] != 0
                 timestr = timestr * "$(Int(time[t])) $(key[t])"
             end
@@ -574,23 +619,23 @@ function plot_top_spec(readfile, timevec, ext="")
             # only plot some of the most important species
             if sstr in ["HDO", "H_2O", "H", "D", "HD", "H_2", "CO_2", "CO", "O", "O_2"]
                 x = ncurrent_vmr[s]
-                ax[i,1][:semilogx](x, y, linewidth=1, alpha=0.85, color=speciescolor[s])
+                ax[i][:semilogx](x, y, linewidth=1, alpha=0.85, color=speciescolor[s])
 
                 # place the species labels
                 if sstr in ["HD", "HDO", "CO", "H_2O"]
-                    ax[i,1][:text](0.2*x[end], y[end]+4, latexstring(sstr), color=speciescolor[s])
+                    ax[i][:text](0.2*x[end], y[end]+4, latexstring(sstr), color=speciescolor[s])
                 else
-                    ax[i,1][:text](0.2*x[1], y[1]-9, latexstring(sstr), color=speciescolor[s])
+                    ax[i][:text](0.2*x[1], y[1]-9, latexstring(sstr), color=speciescolor[s])
                 end
 
                 # title stuff
                 if ext==""
-                    ax[i,1][:set_title](timestr)
+                    ax[i][:set_title](timestr)
                 else
-                    ax[i,1][:text](10.0^-17, 180, returntext[i])
+                    ax[i][:text](10.0^-17, 180, returntext[i])
                 end
 
-                ax[i,1][:grid]("on")
+                ax[i][:grid]("on", zorder=-10, color="gainsboro")
             end
         end
     end # loop over time vector
@@ -598,17 +643,18 @@ function plot_top_spec(readfile, timevec, ext="")
     savefig("1yr_evolution"*ext*".png")
 end
 
-# for files stored in Google drive
-# lead = "/data/GoogleDrive/Phys/LASP/Mars/chaffincode-working/"#"/home/emc/Google Drive/"#
-# for files stored in hard Drive
-lead = "/data/VaryTW_Ana/temp_192_110_199/"
+# lead = "/data/GDrive-CU/Research/Results/"
+lead = "/home/emc/GDrive-CU/Research/Results/"
 
-f1 = lead*"one_year_response_to_80ppm_at_60km.h5"
-plot_select_spec(f1, [1, 606, 790, 999], true)
+f1 = lead*"dh_5.5/one_year_response_to_80ppm_at_60km.h5"
+# plot_select_spec(f1, [1, 606, 790, 999], true)
 #plot_all_spec(f1, [1, 606, 790, 999], true)
+plot_top_spec(f1, [1, 606, 790, 999], true)
 
-f2 = lead*"one_year_response_to_80ppm_at_60km_return.h5"
-plot_select_spec(f2, [1, 606, 790, 999], true, "_return")
+f2 = lead*"dh_5.5/one_year_response_to_80ppm_at_60km_return.h5"
+# plot_select_spec(f2, [1, 606, 790, 999], true, "_return")
 #plot_all_spec(f2, [1, 606, 790, 999], true, "_return")
+plot_top_spec(f1, [1, 606, 790, 999], true, "_return")
+
 
 # 10 days is 790 if you need it

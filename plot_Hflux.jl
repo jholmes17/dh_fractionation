@@ -1,13 +1,17 @@
 ################################################################################
 # plot_Hflux.jl - Plots the flux of H and D over time.
-# Eryn Cangi
+#
+# Eryn Cangi 
 # 31 August 2018
+# Currently tested for Julia: 0.7
 ################################################################################
 
+# modules ======================================================================
 using PyPlot
 using HDF5
 using LaTeXStrings
 
+# functions ====================================================================
 function plot_Hflux(pth, readfile, dincluded, expfolder, poster=false)
     #=
     Creates a plot of H flux out of the atmosphere over time
@@ -18,8 +22,8 @@ function plot_Hflux(pth, readfile, dincluded, expfolder, poster=false)
     poster: whether to use text sizes appropriate for a poster plot
     =#
 
-    const times = h5read(readfile,"fluxes/times")  # read in the times
-    const flux = h5read(readfile,"fluxes/fluxvals")  # read in the flux values
+    times = h5read(readfile,"fluxes/times")  # read in the times
+    flux = h5read(readfile,"fluxes/fluxvals")  # read in the flux values
 
     # for each center of the Gaussian ppm distribution, fill dict with 1D array of variation
     # vs altitude (altitudes are the dict keys)
@@ -28,7 +32,7 @@ function plot_Hflux(pth, readfile, dincluded, expfolder, poster=false)
     flux40 = Dict{Float64,Array{Float64, 1}}()
     flux60 = Dict{Float64,Array{Float64, 1}}()
 
-    for altitude in range(1, 6)
+    for altitude in range(1, length=6)
         # in these pairs, each dictionary key is an altitude (e.g. 40) and each value is the
         # list of ppms. index order is sheet, column, row. sht 1 80ppm; sht 2 20ppm;
         # sht 3 40 ppm; sheet 4 60ppm
@@ -48,10 +52,10 @@ function plot_Hflux(pth, readfile, dincluded, expfolder, poster=false)
 
     # short term plot (1 year) -------------------------------------------------
     fig, ax = subplots(figsize=(12,8))
-    i = 1
     miny = 1e8
     maxy = 0 # find the maxy to set plot limits
-    for k in keyz
+    for i in range(1, length=length(keyz))
+        k = keyz[i]
         col = colors[i]
         lbl = lbls[i]# * " " *
         ax[:loglog](times, flux20[k], color=col, label=lbl,
@@ -69,7 +73,6 @@ function plot_Hflux(pth, readfile, dincluded, expfolder, poster=false)
         if curmax > maxy
             maxy = 10^ceil(log10(curmax))
         end
-        i += 1
     end
     if miny == maxy
         maxy *= 10
@@ -106,7 +109,8 @@ function plot_Hflux(pth, readfile, dincluded, expfolder, poster=false)
     ax[:xaxis][:grid](which="major", color="gainsboro")
     ax[:yaxis][:grid](which="minor", color="gainsboro")
     legend(fontsize=fs["legend"], loc="upper left")
-    suptitle("Flux response to elevated "*latexstring("H_2O, HDO"), fontsize=fs["stitle"], y=1.05)
+    suptitle("Flux response to elevated "*latexstring("H_2O, HDO"), 
+              fontsize=fs["stitle"], y=1.05)
     title(titleext, fontsize=fs["title"])
     if poster==true
         savefig(pth*"atmoresponse" * "_" * dincluded * "_poster.png", bbox_inches="tight")
@@ -116,8 +120,8 @@ function plot_Hflux(pth, readfile, dincluded, expfolder, poster=false)
 
     # long term plot -----------------------------------------------------------
     fig, ax = subplots(figsize=(12,8))
-    i = 1
-    for k in keyz
+    for i in range(1, length=length(keyz))
+        k = keyz[i]
         col = colors[i]
         lbl = lbls[i]
         ax[:loglog](times, flux20[k], color=col, label=lbl,
@@ -135,7 +139,6 @@ function plot_Hflux(pth, readfile, dincluded, expfolder, poster=false)
         if curmax > maxy
             maxy = 10^ceil(log10(curmax))
         end
-        i += 1
     end
     if miny == maxy
         maxy *= 10
@@ -174,11 +177,12 @@ function plot_Hflux(pth, readfile, dincluded, expfolder, poster=false)
     end
 end
 
+# Load files and make plots ====================================================
 #lead = "/data/GDrive-CU/"
 lead = "/home/emc/GDrive-CU/"
 
 expfolder = isdefined(:ARGS) ? ARGS[1] : println("Please use command line args")
-fbase = lead*"Research/Results/VarWaterTemp/"*expfolder*"/"
+fbase = lead*"Research/Results/"*expfolder*"/"
 fH = fbase*"H_esc_flux_history.h5"
 plot_Hflux(fbase, fH, "H", expfolder, true)
 fHD = fbase*"H_and_D_esc_flux_history.h5"

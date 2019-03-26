@@ -1,44 +1,20 @@
+################################################################################
+# run_and_plot.jl --- Main script that runs the coupled photochemistry model
+# in setup_photochemistry.jl.
+# 
+# originally by Mike Chaffin, 2017.
+# Updated by Eryn Cangi 2018+. 
+# Currently tested for Julia: 0.7
+################################################################################
 
-## run_and_plot.jl --- routines to run the coupled photochemistry model
-## to produce model output useful for a 2016 photochemistry paper
+################################################################################
+################################### MODULES ####################################
+################################################################################
+using Distributed
 
-arg_from_rnp = Any[ARGS[i] for i in 1:1:length(ARGS)] # get the args from command line
-@eval @everywhere arg_from_rnp=$arg_from_rnp          # make accessible to all scripts
-
-# following code is specifically for temp/water/dh variation experiments
-# extfn = extension to a filename - where a specific experiment is
-if arg_from_rnp[1] == "temp"
-    extfn = "temp_$(arg_from_rnp[2])_$(arg_from_rnp[3])_$(arg_from_rnp[4])"
-elseif arg_from_rnp[1] == "water"
-    extfn = "water_$(arg_from_rnp[2])"
-elseif arg_from_rnp[1] == "dh"
-    extfn = "dh_$(arg_from_rnp[2])"
-end
-
-@eval @everywhere extfn=$extfn
-@everywhere include("setup_photochemistry.jl") 
-@everywhere @time update!(n_current,0.)
-
-# Run the simulation with logarithmic time steps
-@everywhere timepts = logspace(log10(1),log10(1e7*3.14e7),1000)
-@everywhere timediff = timepts[2:end]-timepts[1:end-1]
-@everywhere append!(timediff,3.3e6*3.14e7*ones(Float64,300))
-
-# identify the converged test case file NOTE: fix all this as needed
-scriptdir = "/data/GDrive-CU/Research/chaffincode-working/" # the main script directory
-experimentdir = "/data/GDrive-CU/Research/Results/"  
-readfile = experimentdir*extfn*"/converged_standardwater_D_"*extfn*".h5"
-println("ALERT: Using file: ", readfile)
-
-# water ppm of 20, 40, 60, 80 each tested at altitudes 20, 40, 60, 80, 120
-# set up the pairings and some filenames
-waterppmvec = [20 40 60 80]
-hdoppmvec = waterppmvec * DH
-wateraltvec = [20 40 60 80 100 120]
-parmsvec = [[a,b] for a in waterppmvec, b in wateraltvec]
-parmsvec = reshape(parmsvec,length(parmsvec))
-filenamevec = [string(experimentdir*extfn*"/ppm_", a[1], "_alt_", a[2], ".h5")
-               for a in parmsvec]
+################################################################################
+############################# FUNCTION DEFINITIONS #############################
+################################################################################
 
 @everywhere function runwaterprofile(n_current, ppmadd, peakalt, dtlist, filename)
     #=
@@ -59,8 +35,9 @@ filenamevec = [string(experimentdir*extfn*"/ppm_", a[1], "_alt_", a[2], ".h5")
     n_internal = deepcopy(n_current)
 
     # modify the water profile stored in n_internal with "gaussian" packet
-    waterppm = 1e-6*map(x->ppmadd.*exp(-((x-peakalt)/12.5)^2),alt[2:end-1]/1e5)+H2Oinitfrac
-    waterprofile = waterppm.*map(z->n_tot(n_internal,z),alt[2:end-1])
+    waterppm = 1e-6 * map(x->ppmadd .* exp(-((x-peakalt)/12.5)^2), 
+                          alt[2:end-1]/1e5) + H2Oinitfrac
+    waterprofile = waterppm .* map(z->n_tot(n_internal,z), alt[2:end-1])
     n_internal[:H2O] = waterprofile
 
     # modify the HDO profile stored in n_internal with "gaussian" packet
@@ -96,7 +73,8 @@ end
     elapsed_time = 0.0
 
     # create a matrix to contain the data in n_internal, which is a Dict
-    n_internal_mat = Array{Float64}(length(alt)-2,length(collect(keys(n_internal))));
+    n_internal_mat = Array{Float64}(undef, length(alt)-2, 
+                                    length(collect(keys(n_internal))));
     for ispecies in 1:length(collect(keys(n_internal)))
         for ialt in 1:length(alt)-2
             n_internal_mat[ialt,ispecies] = n_internal[collect(keys(n_internal))[ispecies]][ialt]
@@ -120,11 +98,12 @@ end
             ##n_old=deepcopy(n_internal)  #TODO: what's this line? remove it?
 
             # where the action happens - update n_internal for new timesteps
-            update!(n_internal,dt)
+            update!(n_internal, dt)
 
             # save the concentrations to history and write n_current into
             # n_current_mat
-            n_internal_mat = Array{Float64}(length(alt)-2,length(collect(keys(n_internal))));
+            n_internal_mat = Array{Float64}(undef, length(alt)-2,
+                                            length(collect(keys(n_internal))));
             for ispecies in 1:length(collect(keys(n_internal)))
                 for ialt in 1:length(alt)-2
                     n_internal_mat[ialt,ispecies] = n_internal[collect(keys(n_internal))[ispecies]][ialt]
@@ -264,7 +243,6 @@ end
     return
 end
 
-# Functions to retrieve water profiles
 function get_water_ppm(filename)
     n_file = read_ncurrent_from_file(filename,"n_current/init")
     waterppmvec = 1e6*n_file[:H2O]./map(z->n_tot(n_file,z),alt[2:end-1])
@@ -277,32 +255,87 @@ function get_hdo_ppm(filename)
     return hdoppmvec
 end
 
-pmap(x->println(string("parmsvec[i][1]=",x[1],", parmsvec[i][2]=",x[2],",
-     filename=",x[3])),[[p,f;] for (p,f) in zip(parmsvec,filenamevec)])
+################################################################################
+##################################### SETUP ####################################
+################################################################################
 
-# This runs the simulation for a year and returns
-oneyeartimepts = logspace(log10(1),log10(3.14e7),1000)
+# collect arguments and set up file name extension =============================
+# collect arguments, make available to all scripts
+arg_from_rnp = Any[ARGS[i] for i in 1:1:length(ARGS)] 
+@eval @everywhere arg_from_rnp=$arg_from_rnp
+
+# Set up FNext, extension to filenames specifying an experiment type
+# for temp/water/dh variation experiments
+if arg_from_rnp[1] == "temp"
+    FNext = "temp_$(arg_from_rnp[2])_$(arg_from_rnp[3])_$(arg_from_rnp[4])"
+elseif arg_from_rnp[1] == "water"
+    FNext = "water_$(arg_from_rnp[2])"
+elseif arg_from_rnp[1] == "dh"
+    FNext = "dh_$(arg_from_rnp[2])"
+end
+@eval @everywhere FNext=$FNext
+
+# Load files and run initial time update =======================================
+scriptdir = "/home/emc/GDrive-CU/Research/chaffincode-working/" 
+experimentdir = "/home/emc/GDrive-CU/Research/Results/"  
+# scriptdir = "/data/GDrive-CU/Research/chaffincode-working/"
+# experimentdir = "/data/GDrive-CU/Research/Results/" 
+readfile = experimentdir*FNext*"/converged_standardwater_D_"*FNext*".h5"
+@eval @everywhere scriptdir=$scriptdir
+@eval @everywhere experimentdir=$experimentdir
+@eval @everywhere readfile=$readfile
+
+println("ALERT: Using file: ", readfile)
+
+@everywhere include("setup_photochemistry.jl") 
+@everywhere @time update!(n_current,0.)
+
+# Set up inputs: timesteps and water profiles ==================================
+# Run the simulation with logarithmic time steps TODO: change logspace to base for 1.0
+@everywhere timepts = logspace(log10(1), log10(1e7*3.14e7), 1000)#base .^ range(1, stop=1e7*3.14e7, length=1000)
+@everywhere timediff = timepts[2:end]-timepts[1:end-1]
+@everywhere append!(timediff,3.3e6*3.14e7*ones(Float64,300))
+
+# water ppm of 20, 40, 60, 80 each tested at altitudes 20, 40, 60, 80, 120
+# set up the pairings and some filenames
+waterppmvec = [20 40 60 80]
+hdoppmvec = waterppmvec * DH
+wateraltvec = [20 40 60 80 100 120]
+parmsvec = [[a,b] for a in waterppmvec, b in wateraltvec]
+parmsvec = reshape(parmsvec,length(parmsvec))
+filenamevec = [string(experimentdir*FNext*"/ppm_", a[1], "_alt_", a[2], ".h5")
+               for a in parmsvec]
+
+################################################################################
+################################ RUN SIMULAIONS ################################
+################################################################################
+
+pmap(x->println(string("parmsvec[i][1]=",x[1],", parmsvec[i][2]=",x[2],",
+     filename=", x[3])), [[p;f] for (p,f) in zip(parmsvec,filenamevec)])
+
+# This runs the simulation for a year and returns TODO: change logspace to base for 1.0
+oneyeartimepts = logspace(log10(1), log10(3.14e7), 1000)#base .^ range(1, stop=3.14e7, length=1000)
 oneyeartimediff = oneyeartimepts[2:end]-oneyeartimepts[1:end-1]
 n_converged = get_ncurrent(readfile)
 
-# Add water / run for a year / remove water / run for a year =================
-#println("running sim for one year")
-#oneyearfn = experimentdir*extfn*"/one_year_response_to_80ppm_at_60km.h5"
-#n_oneyear = runwaterprofile(n_converged, 80, 60, oneyeartimediff, oneyearfn)
+# Add water / run for a year / remove water / run for a year ===================
+println("running sim for one year")
+oneyearfn = experimentdir*FNext*"/one_year_response_to_80ppm_at_60km.h5"
+n_oneyear = runwaterprofile(n_converged, 80, 60, oneyeartimediff, oneyearfn)
 
-#println("now removing the water")
-#returnfn = experimentdir*extfn*"/one_year_response_to_80ppm_at_60km_return.h5"
-#n_return = runwaterprofile(n_oneyear, 0., 60, oneyeartimediff, returnfn)
+println("now removing the water")
+returnfn = experimentdir*FNext*"/one_year_response_to_80ppm_at_60km_return.h5"
+n_return = runwaterprofile(n_oneyear, 0., 60, oneyeartimediff, returnfn)
 
-# Add water and run for just over a year, no removal ==========================
+# Add water and run for just over a year, no removal ===========================
 # This runs the simulation for all added ppms and altitudes
 println("Now doing water profiles")
-#pmap(x->runwaterprofile(n_current, x[1], x[2], timediff, x[3]),
-#     [[p,f;] for (p,f) in zip(parmsvec,filenamevec)])
-#println("Finished with water profiles")
+pmap(x->runwaterprofile(n_current, x[1], x[2], timediff, x[3]),
+    [[p;f] for (p,f) in zip(parmsvec,filenamevec)])
+println("Finished with water profiles")
 pmap(get_all_rates_and_fluxes,filenamevec)
 
-# Calculate H, D, H+D flux at exobase due to each experiment ==================
+# Calculate H, D, H+D flux at exobase due to each experiment ===================
 println("Doing H fluxes")
 Hfluxes = pmap(get_H_fluxes,filenamevec)
 lhfl = length(Hfluxes[1,1])
@@ -310,7 +343,7 @@ writeHfluxes = fill(0.0,(length(waterppmvec),length(wateraltvec),lhfl+2))
 for lp in 1:length(parmsvec)
     ippm = lp%length(waterppmvec)+1
     ialt = floor(Int,(lp-1)/length(waterppmvec))+1
-    writeHfluxes[ippm,ialt,:] = [parmsvec[lp],Hfluxes[lp];]
+    writeHfluxes[ippm,ialt,:] = [parmsvec[lp]; Hfluxes[lp]]
 end
 
 println("Doing D fluxes")
@@ -320,7 +353,7 @@ writeDfluxes = fill(0.0,(length(waterppmvec),length(wateraltvec),lhfl+2))
 for lp in 1:length(parmsvec)
     ippm = lp%length(waterppmvec)+1
     ialt = floor(Int,(lp-1)/length(waterppmvec))+1
-    writeDfluxes[ippm,ialt,:] = [parmsvec[lp],Dfluxes[lp];]
+    writeDfluxes[ippm,ialt,:] = [parmsvec[lp]; Dfluxes[lp]]
 end
 
 println("Doing H+D fluxes")
@@ -330,46 +363,51 @@ writeHDfluxes = fill(0.0,(length(hdoppmvec),length(wateraltvec),lhfl+2))
 for lp in 1:length(parmsvec)
     ippm = lp%length(hdoppmvec)+1
     ialt = floor(Int,(lp-1)/length(hdoppmvec))+1
-    writeHDfluxes[ippm,ialt,:] = [parmsvec[lp],HDfluxes[lp];]
+    writeHDfluxes[ippm,ialt,:] = [parmsvec[lp]; HDfluxes[lp]]
 end
 
 # Calculate the water profiles =================================================
 waterprofs = map(get_water_ppm,filenamevec)
-writewaterprof = fill(0.0,(length(waterppmvec),length(wateraltvec),length(alt)-2+2))
+writewaterprof = fill(0.0, (length(waterppmvec), length(wateraltvec), 
+                            length(alt)-2+2))
 hdoprofs = map(get_hdo_ppm,filenamevec)
-writehdoprof = fill(0.0,(length(hdoppmvec),length(wateraltvec),length(alt)-2+2))
+writehdoprof = fill(0.0, (length(hdoppmvec), length(wateraltvec), 
+                          length(alt)-2+2))
 for lp in 1:length(parmsvec)
     ippm = lp%length(waterppmvec)+1
     ialt = floor(Int,(lp-1)/length(waterppmvec))+1
-    writewaterprof[ippm,ialt,:] = [parmsvec[lp],waterprofs[lp];]
-    writehdoprof[ippm,ialt,:] = [parmsvec[lp],hdoprofs[lp];]
+    writewaterprof[ippm,ialt,:] = [parmsvec[lp]; waterprofs[lp]]
+    writehdoprof[ippm,ialt,:] = [parmsvec[lp]; hdoprofs[lp]]
 end
 
 
 # WRITE OUT H, D, H+D ESCAPE FLUX HISTORY ======================================
 println("Writing H esc file")
-hfile = experimentdir*extfn*"/H_esc_flux_history.h5"
+hfile = experimentdir*FNext*"/H_esc_flux_history.h5"
 h5open(hfile, isfile(hfile) ? "r+" : "w") do file
    write(file,"fluxes/fluxvals",writeHfluxes)
-   write(file,"fluxes/times",h5read(experimentdir*extfn*"/ppm_20_alt_20.h5","n_current/timelist"))
+   write(file,"fluxes/times",
+         h5read(experimentdir*FNext*"/ppm_20_alt_20.h5","n_current/timelist"))
    write(file,"waterprofs/ppm",writewaterprof)
    write(file,"waterprofs/alt",alt[2:end-1])
 end
 
 println("Writing D esc file")
-hfile = experimentdir*extfn*"/D_esc_flux_history.h5"
+hfile = experimentdir*FNext*"/D_esc_flux_history.h5"
 h5open(hfile, isfile(hfile) ? "r+" : "w") do file
    write(file,"fluxes/fluxvals",writeDfluxes)
-   write(file,"fluxes/times",h5read(experimentdir*extfn*"/ppm_20_alt_20.h5","n_current/timelist"))
+   write(file,"fluxes/times",
+         h5read(experimentdir*FNext*"/ppm_20_alt_20.h5","n_current/timelist"))
    write(file,"hdoprofs/ppm",writehdoprof)
    write(file,"waterprofs/alt",alt[2:end-1])
 end
 
 println("Writing H+D esc file")
-hdfile = experimentdir*extfn*"/H_and_D_esc_flux_history.h5"
+hdfile = experimentdir*FNext*"/H_and_D_esc_flux_history.h5"
 h5open(hdfile, isfile(hdfile) ? "r+" : "w") do file
    write(file,"fluxes/fluxvals",writeHDfluxes)
-   write(file,"fluxes/times",h5read(experimentdir*extfn*"/ppm_20_alt_20.h5","n_current/timelist"))
+   write(file,"fluxes/times",
+         h5read(experimentdir*FNext*"/ppm_20_alt_20.h5","n_current/timelist"))
    write(file,"waterprofs/ppm",writewaterprof)
    write(file, "hdoprofs/ppm", writehdoprof)
    write(file,"waterprofs/alt",alt[2:end-1])

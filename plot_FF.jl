@@ -1,24 +1,38 @@
+################################################################################
+# plot_FF.jl --- plots fractionation factor over time from photochemistry
+# experiment results.
+#
+# Eryn Cangi 
+# 2019
+# Currently tested for Julia: 0.7
+################################################################################
+
+# modules ======================================================================
 using PyPlot
 using HDF5
+using Printf
+using Statistics
 
+# functions ====================================================================
 function conc_over_time_water(rf)
     #=
-    returns arrays of concentrations of H2O, HDO at the ground (column 1) over time.
+    returns arrays of concentrations of H2O, HDO at the ground (column 1) over 
+    time.
 
     rf: file containing concentrations over time (main simulation results)
     =#
-    conc0_h2o = Array{Float64}(1299);  # 1299 is the number of timesteps. change as needed
-    conc0_hdo = Array{Float64}(1299);
+    conc0_h2o = Array{Float64}(undef, 1299);  # 1299 is the # of timesteps. change as needed
+    conc0_hdo = Array{Float64}(undef, 1299);
 
-    for i in range(1, 1299) # this is all the times
+    for i in range(1, length=1299) # this is all the times
 
         # identify the row numbers for H2O and HDO
-        const slist = h5read(rf, "n_current/species") # get the list of species
-        h2o_row_idx = findin(slist, ["H2O"])[1]
-        hdo_row_idx = findin(slist, ["HDO"])[1]
+        slist = h5read(rf, "n_current/species") # get the list of species
+        h2o_row_idx = findall((in)(["H2O"]), slist)[1]
+        hdo_row_idx = findall((in)(["HDO"]), slist)[1]
 
         # get hte concentrations of H2O, HDO at ground level
-        const concs = h5read(rf, "n_current/iter_"*string(i))
+        concs = h5read(rf, "n_current/iter_"*string(i))
         conc0_h2o[i] = concs[1, h2o_row_idx]# 1st column => (alt = 0)
         conc0_hdo[i] = concs[1, hdo_row_idx]# 1st column => (alt = 0)
     end
@@ -38,12 +52,12 @@ function conc_over_time_molecH(rf)
     for i in range(1, 1299) # this is all the times
 
         # identify the row numbers for H2O and HDO
-        const slist = h5read(rf, "n_current/species") # get the list of species
+        slist = h5read(rf, "n_current/species") # get the list of species
         h2_row_idx = findin(slist, ["H2"])[1]
         hd_row_idx = findin(slist, ["HD"])[1]
 
         # get hte concentrations of H2O, HDO at ground level
-        const concs = h5read(rf, "n_current/iter_"*string(i))
+        concs = h5read(rf, "n_current/iter_"*string(i))
         conc0_h2[i] = concs[1, h2_row_idx]# 1st column => (alt = 0)
         conc0_hd[i] = concs[1, hd_row_idx]# 1st column => (alt = 0)
     end
@@ -63,9 +77,9 @@ function plot_FF(rfH, rfD, p, titleext="", poster=false)
     =#
 
     pth = p*"/"
-    const times = h5read(rfH,"fluxes/times")  # read in the times
-    const fluxH = h5read(rfH,"fluxes/fluxvals")  # read in the flux values for H
-    const fluxD = h5read(rfD,"fluxes/fluxvals")  # read in the flux values
+    times = h5read(rfH,"fluxes/times")  # read in the times
+    fluxH = h5read(rfH,"fluxes/fluxvals")  # read in the flux values for H
+    fluxD = h5read(rfD,"fluxes/fluxvals")  # read in the flux values
 
     # for each ppm, fill dict with 1D array of variation vs altitude (altitudes are the dict keys)
     flux80H = Dict{Float64,Array{Float64, 1}}()
@@ -87,7 +101,7 @@ function plot_FF(rfH, rfD, p, titleext="", poster=false)
     hdo40 = Dict{Float64,Array{Float64, 1}}()
     hdo60 = Dict{Float64,Array{Float64, 1}}()
 
-    for col_i in range(1, 6)
+    for col_i in range(1, length=6)
         # in these pairs, each dictionary key is an col_i (e.g. 40) and each value is the
         # list of ppms. index order is sheet, column, row. sht 1 80ppm; sht 2 20ppm;
         # sht 3 40 ppm; sheet 4 60ppm
@@ -136,8 +150,8 @@ function plot_FF(rfH, rfD, p, titleext="", poster=false)
 
     # short term plot (1 year)
     fig, ax = subplots(figsize=(12,8))
-    i = 1
-    for k in keyz
+    for i in range(1, length=length(keyz))
+        k = keyz[i]
         col = colors[i]
         lbl = lbls[i]
 
@@ -160,7 +174,6 @@ function plot_FF(rfH, rfD, p, titleext="", poster=false)
         ax[:semilogx](times, FF40, color=col, linestyle=linestyles[2])
         ax[:semilogx](times, FF60, color=col, linestyle=linestyles[3])
         ax[:semilogx](times, FF80, color=col, linestyle=linestyles[4])
-        i += 1
     end
 
     # control font sizes for poster making
@@ -192,8 +205,8 @@ function plot_FF(rfH, rfD, p, titleext="", poster=false)
     # long term plot -----------------------------------------------------------
     fig, ax = subplots(figsize=(12,8))
 
-    i = 1
-    for k in keyz
+    for i in range(1, length=length(keyz))
+        k = keyz[i]
         col = colors[i]
         lbl = lbls[i]
         FF20 = 2*(flux20D[k]./flux20H[k])./(hdo20[k]./h2o20[k])
@@ -204,7 +217,6 @@ function plot_FF(rfH, rfD, p, titleext="", poster=false)
         ax[:semilogx](times, FF40, color=col, linestyle=linestyles[2])
         ax[:semilogx](times, FF60, color=col, linestyle=linestyles[3])
         ax[:semilogx](times, FF80, color=col, linestyle=linestyles[4])
-        i += 1
     end
 
     # plot mlabel stuff
@@ -251,9 +263,9 @@ function plotFF_2panes(rfH, rfD, p, titleext="", poster=false)
     =#
 
     pth = p*"/"
-    const times = h5read(rfH,"fluxes/times")  # read in the times
-    const fluxH = h5read(rfH,"fluxes/fluxvals")  # read in the flux values for H
-    const fluxD = h5read(rfD,"fluxes/fluxvals")  # read in the flux values
+    times = h5read(rfH,"fluxes/times")  # read in the times
+    fluxH = h5read(rfH,"fluxes/fluxvals")  # read in the flux values for H
+    fluxD = h5read(rfD,"fluxes/fluxvals")  # read in the flux values
 
     # for each ppm, fill dict with 1D array of variation vs altitude (altitudes are the dict keys)
     flux80H = Dict{Float64,Array{Float64, 1}}()
@@ -275,7 +287,7 @@ function plotFF_2panes(rfH, rfD, p, titleext="", poster=false)
     hdo40 = Dict{Float64,Array{Float64, 1}}()
     hdo60 = Dict{Float64,Array{Float64, 1}}()
 
-    for col_i in range(1, 6)
+    for col_i in range(1, length=6)
         # in these pairs, each dictionary key is an col_i (e.g. 40) and each value is the
         # list of ppms. index order is sheet, column, row. sht 1 80ppm; sht 2 20ppm;
         # sht 3 40 ppm; sheet 4 60ppm
@@ -314,7 +326,7 @@ function plotFF_2panes(rfH, rfD, p, titleext="", poster=false)
     FF60_all = Float64[]
     FF80_all = Float64[]
 
-    alt_all = Array{Float64}(6)
+    alt_all = Array{Float64}(undef, 6)
 
     # stuff for all plots ------------------------------------------------------
     keyz = sort(collect(keys(flux20H)))
@@ -324,8 +336,8 @@ function plotFF_2panes(rfH, rfD, p, titleext="", poster=false)
 
     # PLOT ---------------------------------------------------------------------
     fig, ax = subplots(1, 2, figsize=(20,10))
-    i = 1
-    for k in keyz
+     for i in range(1, length=length(keyz))
+        k = keyz[i]
         col = colors[i]
         lbl = lbls[i]
 
@@ -344,17 +356,16 @@ function plotFF_2panes(rfH, rfD, p, titleext="", poster=false)
         alt_all[Int(k/20)] = mean(mean([FF20, FF40, FF60, FF80])) # mean first across ppm, then over time.
 
         # the short term plot
-        ax[1, 1][:semilogx](times, FF20, color=col, label=lbl, linestyle=linestyles[1])
-        ax[1, 1][:semilogx](times, FF40, color=col, linestyle=linestyles[2])
-        ax[1, 1][:semilogx](times, FF60, color=col, linestyle=linestyles[3])
-        ax[1, 1][:semilogx](times, FF80, color=col, linestyle=linestyles[4])
+        ax[1][:semilogx](times, FF20, color=col, label=lbl, linestyle=linestyles[1])
+        ax[1][:semilogx](times, FF40, color=col, linestyle=linestyles[2])
+        ax[1][:semilogx](times, FF60, color=col, linestyle=linestyles[3])
+        ax[1][:semilogx](times, FF80, color=col, linestyle=linestyles[4])
 
         # the long term plot
-        ax[2, 1][:semilogx](times, FF20, color=col, label=lbl, linestyle=linestyles[1])
-        ax[2, 1][:semilogx](times, FF40, color=col, linestyle=linestyles[2])
-        ax[2, 1][:semilogx](times, FF60, color=col, linestyle=linestyles[3])
-        ax[2, 1][:semilogx](times, FF80, color=col, linestyle=linestyles[4])
-        i += 1
+        ax[2][:semilogx](times, FF20, color=col, label=lbl, linestyle=linestyles[1])
+        ax[2][:semilogx](times, FF40, color=col, linestyle=linestyles[2])
+        ax[2][:semilogx](times, FF60, color=col, linestyle=linestyles[3])
+        ax[2][:semilogx](times, FF80, color=col, linestyle=linestyles[4])
     end
 
     # control font sizes for poster making
@@ -365,20 +376,20 @@ function plotFF_2panes(rfH, rfD, p, titleext="", poster=false)
     end
 
     # plot label stuff
-    ax[1, 1][:tick_params](axis="both", which="both", labelsize=fs["ticks"])
-    ax[1, 1][:set_xlabel]("Time (seconds)", fontsize=fs["labels"])
-    ax[1, 1][:set_ylabel]("Fractionation factor", fontsize=fs["labels"])
-    ax[1, 1][:set_xlim](10^1,10^7)
-    ax[1, 1][:xaxis][:grid](which="major", color="gainsboro")
-    ax[1, 1][:yaxis][:grid](which="minor", color="gainsboro")
-    ax[1, 1][:set_title]("1 year", fontsize=fs["title"])
-    ax[2, 1][:tick_params](axis="both", which="both", labelsize=fs["ticks"])
-    ax[2, 1][:set_xlabel]("Time (seconds)", fontsize=fs["labels"])
-    ax[2, 1][:set_ylabel]("Fractionation factor", fontsize=fs["labels"])
-    ax[2, 1][:set_xlim](10^1,10^15)
-    ax[2, 1][:xaxis][:grid](which="major", color="gainsboro")
-    ax[2, 1][:yaxis][:grid](which="minor", color="gainsboro")
-    ax[2, 1][:set_title]("10 My", fontsize=fs["title"])
+    ax[1][:tick_params](axis="both", which="both", labelsize=fs["ticks"])
+    ax[1][:set_xlabel]("Time (seconds)", fontsize=fs["labels"])
+    ax[1][:set_ylabel]("Fractionation factor", fontsize=fs["labels"])
+    ax[1][:set_xlim](10^1,10^7)
+    ax[1][:xaxis][:grid](which="major", color="gainsboro")
+    ax[1][:yaxis][:grid](which="minor", color="gainsboro")
+    ax[1][:set_title]("1 year", fontsize=fs["title"])
+    ax[2][:tick_params](axis="both", which="both", labelsize=fs["ticks"])
+    ax[2][:set_xlabel]("Time (seconds)", fontsize=fs["labels"])
+    ax[2][:set_ylabel]("Fractionation factor", fontsize=fs["labels"])
+    ax[2][:set_xlim](10^1,10^15)
+    ax[2][:xaxis][:grid](which="major", color="gainsboro")
+    ax[2][:yaxis][:grid](which="minor", color="gainsboro")
+    ax[2][:set_title]("10 My", fontsize=fs["title"])
     legend(fontsize=fs["legend"], loc="upper left")
 
     tight_layout(rect=[0, 0.03, 1, 0.95]) # use if you want to do a suptitle: rect=[0, 0.03, 1, 0.95]
@@ -407,7 +418,7 @@ function plotFF_2panes(rfH, rfD, p, titleext="", poster=false)
         write(f, "Avg FF for 60 ppm: $(@sprintf("%.2e", mean(FF60_all)))\n")
         write(f, "Avg FF for 80 ppm: $(@sprintf("%.2e", mean(FF80_all)))\n")
 
-        for i in range(1,6)
+        for i in range(1, length=6)
             write(f, "Avg for alt $(i*20) km: $(@sprintf("%.2e", alt_all[i]))\n")
         end
     end
@@ -415,9 +426,9 @@ end
 
 function plotFF_yungcases(rfH, rfD, p, caseno="", titleext="", poster=false)
     pth = p*"Case "*caseno*"/"
-    const times = h5read(rfH,"fluxes/times")  # read in the times
-    const fluxH_data = h5read(rfH,"fluxes/fluxvals")  # read in the flux values for H
-    const fluxD_data = h5read(rfD,"fluxes/fluxvals")  # read in the flux values
+    times = h5read(rfH,"fluxes/times")  # read in the times
+    fluxH_data = h5read(rfH,"fluxes/fluxvals")  # read in the flux values for H
+    fluxD_data = h5read(rfD,"fluxes/fluxvals")  # read in the flux values
 
     # for each ppm, fill dict with 1D array of variation vs altitude (altitudes are the dict keys)
     fluxH = Dict{Float64,Array{Float64, 1}}()
@@ -503,7 +514,7 @@ function calcPopRatio(p)
     parmsvec = [[a,b] for a in waterppmvec, b in wateraltvec]
     parmsvec = reshape(parmsvec,length(parmsvec))
     files = [string(p*"ppm_",a[1],"_alt_",a[2],".h5") for a in parmsvec]
-    const times = h5read(files[1],"n_current/timelist")
+    times = h5read(files[1],"n_current/timelist")
 
     println("Ending the setup: ", Dates.Time(now()))
 
@@ -581,8 +592,9 @@ function calcPopRatio(p)
 end
 
 
-lead = "/data/GDrive-CU/"
-# lead = "/home/emc/GDrive-CU/"
+# Identify experiment and make the plots =======================================
+# lead = "/data/GDrive-CU/"
+lead = "/home/emc/GDrive-CU/"
 
 # for doing Yung experiments
 # P = lead*"Phys/LASP/chaffincode-working/Yung-With-Old-Water/"#
@@ -598,4 +610,3 @@ P = lead*"Research/Results/"*expfolder
 fH = P*"/H_esc_flux_history.h5"
 fD = P*"/D_esc_flux_history.h5"
 plotFF_2panes(fH, fD, P, expfolder, true)
-

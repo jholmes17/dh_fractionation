@@ -1,13 +1,21 @@
 ################################################################################
 # plot_snapshot.jl - Plots a snapshot of the atmospheric state at a specified
 # time index within the simulation.
+#
 # Eryn Cangi
 # 31 August 2018
+# Currently tested for Julia: 0.7
 ################################################################################
 
 using PyPlot
 using HDF5
 using LaTeXStrings
+
+const fullspecieslist = [:CO2, :O2, :O3, :H2, :OH, :HO2, :H2O, :H2O2, :O, :CO,
+                         :O1D, :H, :N2, :Ar, :CO2pl, :HOCO,
+                         # species for deuterium chemistry:
+                         :HDO, :OD, :HDO2, :D, :DO2, :HD, :DOCO];
+specieslist=fullspecieslist;
 
 function convert_secs(secs)
     #=
@@ -49,6 +57,12 @@ function convert_secs(secs)
         hrs = 0
     end
     return [yrs, days, hrs]
+end
+
+function n_tot(n_current, z)
+    # get the total number density at a given altitude
+    thisaltindex = n_alt_index[z]
+    return sum( [n_current[s][thisaltindex] for s in specieslist] )
 end
 
 function plot_snap(readfile, timevec, poster, convergefile=false, init=false)
@@ -166,7 +180,7 @@ function plot_snap(readfile, timevec, poster, convergefile=false, init=false)
     end
 
     # make a figure and set up some global labels
-    fig, ax = subplots(figsize=(6,6))
+    fig, ax = subplots(figsize=(10,6))
 
     # do not change the following line and do not use tight_layout(), it conflicts
     subplots_adjust(wspace=0, bottom=0.15)
@@ -196,22 +210,8 @@ function plot_snap(readfile, timevec, poster, convergefile=false, init=false)
         # convert to volume mixing ratio
         ncurrent_vmr = deepcopy(ncurrent)
 
-        # iterate over altitudes
-        for a in range(1,length(alt)-2)
-            n_tot_this_alt = 0
-
-            # including the following 2 loops separately is less code than
-            # copying in n_tot and all its dependencies from setup_photochemistry
-
-            # compute the total number density at altitude alt[a]
-            for s in species
-                n_tot_this_alt += ncurrent[s][a]
-            end
-
-            # convert to VMR and fill the array
-            for s2 in species
-                ncurrent_vmr[s2][a] = ncurrent[s2][a] / n_tot_this_alt
-            end
+        for k in keys(ncurrent_vmr)
+            ncurrent_vmr[k] = ncurrent_vmr[k] ./ map(z->n_tot(ncurrent, z), alt[2:end-1])
         end
 
         # convert the iteration number to a time in years, days, hours
@@ -273,14 +273,19 @@ function plot_snap(readfile, timevec, poster, convergefile=false, init=false)
             end
         end
     end # loop over time vector
-    #savefig("snapshot_"*string(timevec[1])*".png")
+    savefig("../notebookpics/snapshot_MAYBEFIX"*string(timevec[1])*".png")
 end
 
-# FILL ME IN
-rf = "/data/GDrive-CU/Research/Results/VarWaterTemp/temp_192_110_199/converged_standardwater_D_temp_192_110_199.h5"
-# plot_snap(rf, [1], true)
-# plot_snap(rf, [606], true)
-# plot_snap(rf, [790], true)
-# plot_snap(rf, [999], true)
-# plot_snap(rf, [1100], true)
-plot_snap(rf, [1], true, true, false)
+
+# base = "/data/GDrive-CU/Research/Results/Mikes_Results"
+# rf = base*"/one_year_response_to_80ppm_at_60km.h5"
+# plot_snap(rf, [1], true, false, false)
+
+
+base = "/data/GDrive-CU/Research/Results/VarWaterTemp"
+rf = base*"/temp_192_110_199/converged_standardwater_D_temp_192_110_199.h5"
+const alt = h5read(rf,"n_current/alt")
+n_alt_index=Dict([z=>clamp((i-1),1, length(alt)-2) for (i, z) in enumerate(alt)])
+
+
+plot_snap(rf, [1299], true, true, false) # for convergence files
