@@ -747,16 +747,16 @@ experimentdir = "/home/emc/GDrive-CU/Research/Results/"
 # examples: temp 192 110 199      water 1e-3
 argarray = Any[ARGS[i] for i in 1:1:length(ARGS)]
 
-# set up extension to the filename (extfn) for temp/water variation experiments
+# set up extension to the filename (FNext) for temp/water variation experiments
 if argarray[1] == "temp"
-    extfn = "temp_$(argarray[2])_$(argarray[3])_$(argarray[4])"
+    FNext = "temp_$(argarray[2])_$(argarray[3])_$(argarray[4])"
 elseif argarray[1] == "water"
-    extfn = "water_$(argarray[2])"
+    FNext = "water_$(argarray[2])"
 elseif argarray[1] == "dh"
-    extfn = "dh_$(argarray[2])"
+    FNext = "dh_$(argarray[2])"
 end
 
-println("ALERT: running sim for $(extfn)")
+println("ALERT: running sim for $(FNext)")
 
 # Set up the converged file to read from and load the simulation state at init.
 readfile = scriptdir*"converged_standardwater.h5"
@@ -1247,10 +1247,10 @@ write(f, "Total H2O col: $(sum(n_current[:H2O])*2e5)")
 write(f, "Total HDO col: $(sum(n_current[:HDO])*2e5)")
 write(f, "Total water col: $(sum(n_current[:H2O])*2e5 + sum(n_current[:HDO])*2e5)")
 write(f, "Water at surface: $(n_current[:H2O][1] + n_current[:H2O][1])")
-write(f, (sum(([1e-4, H2Oinitfrac;]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*18*1e4)
-write(f, (sum(([1e-4, detachedlayer;]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*18*1e4)
-write(f, (sum(([1e-4*DH, HDOinitfrac;]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*19*1e4)
-write(f, (sum(([1e-4*DH, detachedlayer_HDO;]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*19*1e4)
+write(f, (sum(([1e-4; H2Oinitfrac]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*18*1e4)
+write(f, (sum(([1e-4; detachedlayer]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*18*1e4)
+write(f, (sum(([1e-4*DH; HDOinitfrac]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*19*1e4)
+write(f, (sum(([1e-4*DH; detachedlayer_HDO]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*19*1e4)
 close(f)
 
 ################################################################################
@@ -2122,18 +2122,18 @@ end
 
 # write out the new converged file to matching folder. create folder if needed
 dircontents = readdir(experimentdir)
-println("Checking for existence of $(extfn) folder...")
-if extfn in dircontents
-    println("Folder $(extfn) exists")
+println("Checking for existence of $(FNext) folder...")
+if FNext in dircontents
+    println("Folder $(FNext) exists")
 else
-    mkdir(experimentdir*extfn)
+    mkdir(experimentdir*FNext)
 end
-towrite = experimentdir*extfn*"/converged_standardwater_D_"*extfn*".h5"
+towrite = experimentdir*FNext*"/converged_standardwater_D_"*FNext*".h5"
 write_ncurrent(n_current, towrite)
 println("Wrote $(towrite)")
 
 # save the figure
-savefig(experimentdir*extfn*"/converged_"*extfn*".png")
+savefig(experimentdir*FNext*"/converged_"*FNext*".png")
 println("Saved figure to same folder")
 
 ################################################################################
@@ -2152,7 +2152,7 @@ elseif argarray[1]=="dh"
                 DH=$(argarray[2])"
 end
 
-f = open(experimentdir*extfn*"/convergence_"*extfn*".txt", "w")
+f = open(experimentdir*FNext*"/convergence_"*FNext*".txt", "w")
 write(f, towrite)
 write(f, towrite2)
 #write(f, "NOTE: this simulation was run with SOLAR MAX values")
