@@ -11,6 +11,7 @@
 ###ALL distance/area/volume units must be in CM!!!!
 
 using PyPlot
+using PyCall
 using HDF5, JLD
 using LaTeXStrings
 using Distributed
@@ -728,9 +729,233 @@ function plotatm()
     plotatm(n_current)
 end
 
+# diffusion functions ==========================================================
+function Keddy(n_current, z)
+    #=
+    eddy diffusion coefficient, stolen from Krasnopolsky (1993).
+    Scales as the inverse sqrt of atmospheric number density
+
+    n_current: dictionary representing current simulation state.
+    z: some altitude in cm.
+    =#
+    z <= 60.e5 ? 10^6 : 2e13/sqrt(n_tot(n_current, z))
+end
+
+function Keddy(z::Real, nt::Real)
+    #=
+    eddy diffusion coefficient, stolen from Krasnopolsky (1993).
+    Scales as the inverse sqrt of atmospheric number density
+
+    z: some altitude in cm.
+    nt: number total of species at this altitude (I think)
+    =#
+    z <= 60.e5 ? 10^6 : 2e13/sqrt(nt)
+end
+
+function Dcoef(T, n::Real, species::Symbol)
+    #=
+    Calculates molecular diffusion coefficient for a particular slice of the
+    atmosphere using D = AT^s/n, from Banks and Kockarts Aeronomy, part B,
+    pg 41, eqn 15.30 and table 15.2 footnote
+
+    T: temperature
+    n: number of molecules (all species) this altitude
+    species: whichever species we are calculating for
+    =#
+    dparms = diffparams(species)
+    return dparms[1]*1e17*T^(dparms[2])/n
+end
+
+# boundary condition functions =================================================
+function effusion_velocity(Texo::Float64, m::Float64)
+    #=
+    Returns effusion velocity for a species.
+    Texo: temperature of the exobase (upper boundary) in K
+    m: mass of one molecule of species in amu
+    =#
+    lambda = (m*mH*bigG*marsM)/(boltzmannK*Texo*1e-2*(radiusM+zmax))
+    vth=sqrt(2*boltzmannK*Texo/(m*mH))
+    v = 1e2*exp(-lambda)*vth*(lambda+1)/(2*pi^0.5)
+    return v
+end
+
+function speciesbcs(species)
+    get(speciesbclist,
+        species,
+        ["f" 0.; "f" 0.])
+end
+
+# main routine functions =======================================================
+function update_Jrates!(n_current::Dict{Symbol, Array{Float64, 1}})
+    #=
+    this function updates the photolysis rates stored in n_current to
+    reflect the altitude distribution of absorbing species
+    =#
+    #    global solarabs::Array{Array{Float64, 1},1}
+
+    # Initialize an array, length=num of altitude levels - 2.
+    # Each sub-array is an array of length 2000, corresponding to 2000 wavelengths.
+    solarabs = Array{Array{Float64}}(undef, length(alt)-2)
+    for i in range(1, length=length(alt)-2)
+        solarabs[i] = zeros(Float64, 2000)
+    end
+
+    nalt = size(solarabs, 1)
+    nlambda = size(solarabs[1],1)
+
+    for jspecies in Jratelist
+        species = absorber[jspecies]
+
+        jcolumn = 0.
+        for ialt in [nalt:-1:1;]
+            #get the vertical column of the absorbing constituient
+            jcolumn += n_current[species][ialt]*dz
+            # if jspecies==:JO2toOpO
+            #     println(string("At alt = ",alt[ialt+1],
+            #                    ", n_",species," = ",n_current[species][ialt],
+            #                    ", jcolumn = ",jcolumn))
+            #     println("and solarabs[ialt] is $(solarabs[ialt]) before we do axpy")
+            #     readline(STDIN)
+            # end
+
+            # add the total extinction to solarabs:
+            # multiplies air column density at all wavelengths by crosssection
+            # to get optical depth
+            BLAS.axpy!(nlambda, jcolumn, crosssection[jspecies][ialt+1], 1,
+                       solarabs[ialt],1)
+        end
+    end
+
+    #solarabs now records the total optical depth of the atmosphere at
+    #each wavelength and altitude
+
+    # actinic flux at each wavelength is solar flux diminished by total
+    # optical depth
+    for ialt in [1:nalt;]
+        solarabs[ialt] = solarflux[:,2].*exp.(-solarabs[ialt])
+    end
+
+    #each species absorbs according to its cross section at each
+    #altitude times the actinic flux.
+    for j in Jratelist
+        for ialt in [1:nalt;]
+            n_current[j][ialt] = BLAS.dot(nlambda, solarabs[ialt], 1,
+                                          crosssection[j][ialt+1], 1)
+        end
+    end
+end
+
+function timeupdate(mytime)
+    for i = 1:15
+        # following 2 lines are for troubleshooting/observing change over time
+        plotatm()
+        println("dt: ", mytime)
+        update!(n_current, mytime)
+    end
+    # show()
+    ## yield()
+end
+
+
+function next_timestep(nstart::Array{Float64, 1},
+                       nthis::Array{Float64, 1},
+                       inactive::Array{Float64, 1},
+                       Jrates::Array{Float64, 2},
+                       T::Array{Float64, 1},
+                       M::Array{Float64, 1},
+                       tup::Array{Float64, 2},
+                       tdown::Array{Float64, 2},
+                       tlower::Array{Float64, 2},
+                       tupper::Array{Float64, 2},
+                       dt::Float64)
+    #=
+    moves to the next timestep using Newton's method on the linearized
+    coupled transport and chemical reaction network.
+    =#
+    eps = 1.0 # ensure at least one iteration
+    iter = 0
+    while eps>1e-8
+        nold = deepcopy(nthis)
+
+        # stuff concentrations into update function and jacobian
+        fval = nthis - nstart - dt*ratefn(nthis, inactive, Jrates, T, M, tup,
+                                          tdown, tlower, tupper)
+        #if eps>1e-2; updatemat=chemJmat([nthis, nochems, phrates, T, M, dt]...); end;
+        updatemat = chemJmat(nthis, inactive, Jrates, T, M, tup, tdown, tlower,
+                             tupper, dt)
+
+        # update
+        nthis = nthis - (updatemat \ fval)
+        # check relative size of update
+        eps = maximum(abs.(nthis-nold)./nold)
+        #println("eps=",eps)
+        iter += 1
+        if iter>1e3; throw("too many iterations in next_timestep!"); end;
+    end
+    return nthis
+end
+
+@everywhere function update!(n_current::Dict{Symbol, Array{Float64, 1}},dt)
+    # update n_current using the coupled reaction network, moving to
+    # the next timestep
+
+    #set auxiliary (not solved for in chemistry) species values
+    inactive = deepcopy(Float64[[n_current[sp][ialt] for sp in inactivespecies, ialt in 1:length(intaltgrid)]...])
+
+    # set photolysis rates
+    Jrates = deepcopy(Float64[n_current[sp][ialt] for sp in Jratelist, ialt in 1:length(intaltgrid)])
+
+    # extract concentrations
+    nstart = deepcopy([[n_current[sp][ialt] for sp in activespecies, ialt in 1:length(intaltgrid)]...])
+    M = sum([n_current[sp] for sp in fullspecieslist])
+
+    # TODO: Is is really necessary to do this every time update! is run?
+    # set temperature and total atmospheric concentration
+    T = Float64[Temp(a) for a in alt[2:end-1]]
+
+    # take initial guess
+    nthis = deepcopy(nstart)
+
+    # get the transport rates
+    tup = Float64[issubset([sp],notransportspecies) ? 0.0 : fluxcoefs(a, dz, sp, n_current)[2] for sp in specieslist, a in alt[2:end-1]]
+    tdown = Float64[issubset([sp],notransportspecies) ? 0.0 : fluxcoefs(a, dz, sp, n_current)[1] for sp in specieslist, a in alt[2:end-1]]
+
+    # put the lower bcs and upper bcs in separate arrays; but they are not the
+    # right shape!
+    tlower_temp = [boundaryconditions(sp, dz, n_current)[1,:] for sp in specieslist]
+    tupper_temp = [boundaryconditions(sp, dz, n_current)[2,:] for sp in specieslist]
+
+    # reshape tlower and tupper into 2x2 arrays
+    tlower = zeros(Float64, length(tlower_temp), 2)
+    tupper = zeros(Float64, length(tupper_temp), 2)
+
+    # tlower_temp & tupper_temp have same length; OK to use lower for the range
+    for r in range(1, length=length(tlower_temp))
+        tlower[r, :] = tlower_temp[r]
+        tupper[r, :] = tupper_temp[r]
+    end
+
+    # update to next timestep
+    nthis = next_timestep(nstart, nthis, inactive, Jrates, T, M, tup, tdown,
+                          tlower, tupper, dt)
+    nthismat = reshape(nthis,(length(activespecies),length(intaltgrid)))
+
+    # write found values out to n_current
+    for s in 1:length(activespecies)
+        for ia in 1:length(intaltgrid)
+            tn = nthismat[s, ia]
+            n_current[activespecies[s]][ia] = tn > 0. ? tn : 0.
+        end
+    end
+
+    update_Jrates!(n_current)
+    #plotatm()
+end #update!
+
+
 
 ################################################################################
-###################### Load Converged Test Case from File ######################
+################################## MAIN SETUP ##################################
 ################################################################################
 
 # get command line arguments sent with run_and_plot.jl. format:
@@ -758,6 +983,14 @@ end
 # used in combination with n_current. Gets the index corresponding to a given altitude
 # has to be here because alt needs to be defined first
 n_alt_index=Dict([z=>clamp((i-1),1, length(alt)-2) for (i, z) in enumerate(alt)])
+
+# Set plot fonts to be good for posters and presentations
+PyCall.PyDict(matplotlib["rcParams"])["font.sans-serif"] = ["Laksaman"]
+PyCall.PyDict(matplotlib["rcParams"])["font.monospace"] = ["FreeMono"]
+PyCall.PyDict(matplotlib["rcParams"])["font.size"] = 22
+PyCall.PyDict(matplotlib["rcParams"])["axes.labelsize"]= 24
+PyCall.PyDict(matplotlib["rcParams"])["xtick.labelsize"] = 22
+PyCall.PyDict(matplotlib["rcParams"])["ytick.labelsize"] = 22
 
 ################################################################################
 ##################### FUNDAMENTAL CONSTANTS AND SPECIES LIST ###################
@@ -1181,8 +1414,10 @@ HDOsat = map(x->Psat_HDO(x), map(Temp, alt))
 # Set up the water profile =====================================================
 if argarray[1] == "water"  # make constant in the lower atmosphere (well-mixed)
     H2Oinitfrac[findall(x->x<60e5, alt)] .= argarray[2]
+    MR = argarray[2] # mixing ratio 
 else
     H2Oinitfrac[findall(x->x<30e5, alt)] .= 1e-4
+    MR = 1e-4
 end
 
 for i in [1:length(H2Oinitfrac);]
@@ -1197,64 +1432,9 @@ HDOinitfrac = H2Oinitfrac * DH  # initial profile for HDO
 detachedlayer = 1e-6*map(x->80 .* exp(-((x-60)/12.5)^2),alt[2:end-1]/1e5)+H2Oinitfrac
 detachedlayer_HDO = detachedlayer * DH
 
-# Plot initial water profile with detatched layer ==============================
-clf()
-semilogx(H2Oinitfrac/1e-6, alt[2:end-1]/1e5, color="blue", linewidth=5,
-         label=L"$H_2O$ base")
-semilogx(detachedlayer/1e-6, alt[2:end-1]/1e5, color="red", linewidth=2,
-         linestyle="--", label=L"enhanced $H_2O$")
-semilogx(HDOinitfrac/1e-6, alt[2:end-1]/1e5, color="navy", linewidth=5,
-         label=L"$HDO$ base")
-semilogx(detachedlayer_HDO/1e-6, alt[2:end-1]/1e5, color="darkred", linewidth=2,
-         linestyle="--", label=L"enhanced $HDO$")
-xlabel("Volume Mixing Ratio [ppm]", fontsize=18)
-ylabel("Altitude [km]", fontsize=18)
-title(L"$H_2O$ and HDO model profiles", fontsize=20)
-text(0.08, 59, "0.07ppm", color="darkred", size=16)
-text(5, 57, "80ppm", color="red", size=16)
-ax = gca()
-ax[:tick_params]("both",labelsize=16)
-legend(fontsize=14)
-savefig(experimentdir*FNext*"/waterprofs_80ppm.png")
-show()
-
-# this computes the total water column in precipitable microns =================
-# n_col(molecules/cm2)/(molecules/mol)*(gm/mol)*(1cc/gm) = (cm)*(10^4μm/cm)
-# = precipitable μm
-
-f = open(experimentdir*FNext*"/water_column_"*FNext*".txt", "w")
-write(f, "Total H2O col: $(sum(n_current[:H2O])*2e5)")
-write(f, "Total HDO col: $(sum(n_current[:HDO])*2e5)")
-write(f, "Total water col: $(sum(n_current[:H2O])*2e5 + sum(n_current[:HDO])*2e5)")
-write(f, "Water at surface: $(n_current[:H2O][1] + n_current[:H2O][1])")
-write(f, (sum(([1e-4, H2Oinitfrac;]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*18*1e4)
-write(f, (sum(([1e-4, detachedlayer;]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*18*1e4)
-write(f, (sum(([1e-4*DH, HDOinitfrac;]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*19*1e4)
-write(f, (sum(([1e-4*DH, detachedlayer_HDO;]).*map(z->n_tot(n_current, z),alt[1:end-1]))*dz)/6.02e23*19*1e4)
-close(f)
-
-
 ################################################################################
 ############################# BOUNDARY CONDITIONS ##############################
 ################################################################################
-
-function effusion_velocity(Texo::Float64, m::Float64)
-    #=
-    Returns effusion velocity for a species.
-    Texo: temperature of the exobase (upper boundary) in K
-    m: mass of one molecule of species in amu
-    =#
-    lambda = (m*mH*bigG*marsM)/(boltzmannK*Texo*1e-2*(radiusM+zmax))
-    vth=sqrt(2*boltzmannK*Texo/(m*mH))
-    v = 1e2*exp(-lambda)*vth*(lambda+1)/(2*pi^0.5)
-    return v
-end
-
-function speciesbcs(species)
-    get(speciesbclist,
-        species,
-        ["f" 0.; "f" 0.])
-end
 
 H_effusion_velocity = effusion_velocity(Temp(zmax),1.0)
 H2_effusion_velocity = effusion_velocity(Temp(zmax),2.0)
@@ -1263,9 +1443,10 @@ HD_effusion_velocity = effusion_velocity(Temp(zmax),3.0)
 
 #=
 boundary conditions for each species (Nair 1994, Yung 1988). For most species,
-default boundary condition is zero flux at top and bottom. Atomic/molecular
-hydrogen and deuterated analogues have a nonzero effusion velocity at the upper
-layer of the atmosphere.
+default boundary condition is zero (f)lux at top and bottom. Atomic/molecular
+hydrogen and deuterated analogues have a nonzero effusion (v)elocity at the 
+upper layer of the atmosphere. Some species have a (n)umber density boundary 
+condition.
 =#
 const speciesbclist=Dict(
                 :CO2=>["n" 2.1e17; "f" 0.],
@@ -1283,28 +1464,6 @@ const speciesbclist=Dict(
 ################################################################################
 ############################ DIFFUSION COEFFICIENTS ############################
 ################################################################################
-
-function Keddy(n_current, z)
-    #=
-    eddy diffusion coefficient, stolen from Krasnopolsky (1993).
-    Scales as the inverse sqrt of atmospheric number density
-
-    n_current: dictionary representing current simulation state.
-    z: some altitude in cm.
-    =#
-    z <= 60.e5 ? 10^6 : 2e13/sqrt(n_tot(n_current, z))
-end
-
-function Keddy(z::Real, nt::Real)
-    #=
-    eddy diffusion coefficient, stolen from Krasnopolsky (1993).
-    Scales as the inverse sqrt of atmospheric number density
-
-    z: some altitude in cm.
-    nt: number total of species at this altitude (I think)
-    =#
-    z <= 60.e5 ? 10^6 : 2e13/sqrt(nt)
-end
 
 #=
 molecular diffusion parameters. value[1] = A, value[2] = s in the equation
@@ -1330,19 +1489,7 @@ THESE ARE IN cm^-2 s^-2!!!
 diffparams(species) = get(Dict(:H=>[8.4, 0.597], :H2=>[2.23, 0.75],
                                :D=>[5.98, 0.597], :HD=>[1.84, 0.75]),
                                species,[1.0, 0.75])
-function Dcoef(T, n::Real, species::Symbol)
-    #=
-    Calculates molecular diffusion coefficient for a particular slice of the
-    atmosphere using D = AT^s/n, from Banks and Kockarts Aeronomy, part B,
-    pg 41, eqn 15.30 and table 15.2 footnote
 
-    T: temperature
-    n: number of molecules (all species) this altitude
-    species: whichever species we are calculating for
-    =#
-    dparms = diffparams(species)
-    return dparms[1]*1e17*T^(dparms[2])/n
-end
 # override to use altitude instead of temperature
 Dcoef(z, species::Symbol, n_current) = Dcoef(Temp(z),n_tot(n_current, z),species)
 
@@ -1440,106 +1587,6 @@ end
     end
 end
 
-
-################################################################################
-############################ MAIN ROUTINE FUNCTIONS ############################
-################################################################################
-
-function next_timestep(nstart::Array{Float64, 1},
-                       nthis::Array{Float64, 1},
-                       inactive::Array{Float64, 1},
-                       Jrates::Array{Float64, 2},
-                       T::Array{Float64, 1},
-                       M::Array{Float64, 1},
-                       tup::Array{Float64, 2},
-                       tdown::Array{Float64, 2},
-                       tlower::Array{Float64, 2},
-                       tupper::Array{Float64, 2},
-                       dt::Float64)
-    #=
-    moves to the next timestep using Newton's method on the linearized
-    coupled transport and chemical reaction network.
-    =#
-    eps = 1.0 # ensure at least one iteration
-    iter = 0
-    while eps>1e-8
-        nold = deepcopy(nthis)
-
-        # stuff concentrations into update function and jacobian
-        fval = nthis - nstart - dt*ratefn(nthis, inactive, Jrates, T, M, tup,
-                                          tdown, tlower, tupper)
-        #if eps>1e-2; updatemat=chemJmat([nthis, nochems, phrates, T, M, dt]...); end;
-        updatemat = chemJmat(nthis, inactive, Jrates, T, M, tup, tdown, tlower,
-                             tupper, dt)
-
-        # update
-        nthis = nthis - (updatemat \ fval)
-        # check relative size of update
-        eps = maximum(abs.(nthis-nold)./nold)
-        #println("eps=",eps)
-        iter += 1
-        if iter>1e3; throw("too many iterations in next_timestep!"); end;
-    end
-    return nthis
-end
-
-@everywhere function update!(n_current::Dict{Symbol, Array{Float64, 1}},dt)
-    # update n_current using the coupled reaction network, moving to
-    # the next timestep
-
-    #set auxiliary (not solved for in chemistry) species values
-    inactive = deepcopy(Float64[[n_current[sp][ialt] for sp in inactivespecies, ialt in 1:length(intaltgrid)]...])
-
-    # set photolysis rates
-    Jrates = deepcopy(Float64[n_current[sp][ialt] for sp in Jratelist, ialt in 1:length(intaltgrid)])
-
-    # extract concentrations
-    nstart = deepcopy([[n_current[sp][ialt] for sp in activespecies, ialt in 1:length(intaltgrid)]...])
-    M = sum([n_current[sp] for sp in fullspecieslist])
-
-    # TODO: Is is really necessary to do this every time update! is run?
-    # set temperature and total atmospheric concentration
-    T = Float64[Temp(a) for a in alt[2:end-1]]
-
-    # take initial guess
-    nthis = deepcopy(nstart)
-
-    # get the transport rates
-    tup = Float64[issubset([sp],notransportspecies) ? 0.0 : fluxcoefs(a, dz, sp, n_current)[2] for sp in specieslist, a in alt[2:end-1]]
-    tdown = Float64[issubset([sp],notransportspecies) ? 0.0 : fluxcoefs(a, dz, sp, n_current)[1] for sp in specieslist, a in alt[2:end-1]]
-
-    # put the lower bcs and upper bcs in separate arrays; but they are not the
-    # right shape!
-    tlower_temp = [boundaryconditions(sp, dz, n_current)[1,:] for sp in specieslist]
-    tupper_temp = [boundaryconditions(sp, dz, n_current)[2,:] for sp in specieslist]
-
-    # reshape tlower and tupper into 2x2 arrays
-    tlower = zeros(Float64, length(tlower_temp), 2)
-    tupper = zeros(Float64, length(tupper_temp), 2)
-
-    # tlower_temp & tupper_temp have same length; OK to use lower for the range
-    for r in range(1, length=length(tlower_temp))
-        tlower[r, :] = tlower_temp[r]
-        tupper[r, :] = tupper_temp[r]
-    end
-
-    # update to next timestep
-    nthis = next_timestep(nstart, nthis, inactive, Jrates, T, M, tup, tdown,
-                          tlower, tupper, dt)
-    nthismat = reshape(nthis,(length(activespecies),length(intaltgrid)))
-
-    # write found values out to n_current
-    for s in 1:length(activespecies)
-        for ia in 1:length(intaltgrid)
-            tn = nthismat[s, ia]
-            n_current[activespecies[s]][ia] = tn > 0. ? tn : 0.
-        end
-    end
-
-    update_Jrates!(n_current)
-    #plotatm()
-end #update!
-
 ################################################################################
 ######################### PHOTOCHEMICAL CROSS SECTIONS #########################
 ################################################################################
@@ -1547,9 +1594,28 @@ end #update!
 # Change following line as needed depending on local machine
 xsecfolder = scriptdir * "uvxsect/";
 
+# Crosssection Files ===========================================================
+co2file = "CO2.dat"
+co2exfile = "binnedCO2e.csv"
+h2ofile = "h2oavgtbl.dat"
+hdofile = "HDO.dat"
+h2o2file = "H2O2.dat"
+hdo2file = "H2O2.dat" #TODO: do HDO2 xsects exist?
+o3file = "O3.dat"
+o3chapfile = "O3Chap.dat"
+o2file = "O2.dat"
+o2_130_190 = "130-190.cf4"
+o2_190_280 = "190-280.cf4"
+o2_280_500 = "280-500.cf4"
+h2file = "binnedH2.csv"
+hdfile = "binnedH2.csv" # TODO: change this to HD file if xsects ever become real
+ohfile = "binnedOH.csv"
+oho1dfile = "binnedOHo1D.csv"
+odfile = "OD.csv"
+
 # CO2 ==========================================================================
 # temperature-dependent between 195-295K
-co2xdata = readandskip(xsecfolder*"CO2.dat",'\t',Float64, skipstart = 4)
+co2xdata = readandskip(xsecfolder*co2file,'\t',Float64, skipstart = 4)
 function co2xsect(T::Float64)
     clamp(T, 195, 295)
     Tfrac = (T-195)/(295-195)
@@ -1559,19 +1625,18 @@ function co2xsect(T::Float64)
 end
 
 # CO2 photoionization (used to screen high energy sunlight)
-co2exdata = readandskip(xsecfolder*"binnedCO2e.csv",',',Float64, skipstart = 4)
+co2exdata = readandskip(xsecfolder*co2exfile,',',Float64, skipstart = 4)
 
 # H2O & HDO ====================================================================
-h2oxdata = readandskip(xsecfolder*"h2oavgtbl.dat",'\t',Float64, skipstart = 4)
+h2oxdata = readandskip(xsecfolder*h2ofile,'\t',Float64, skipstart = 4)
 
 # NEW - HDO crosssection. Data is for 298K.
-hdoxdata = readandskip(xsecfolder*"HDO.dat",'\t', Float64, skipstart=12)
+hdoxdata = readandskip(xsecfolder*hdofile,'\t', Float64, skipstart=12) #deepcopy(h2oxdata)#
 
 # H2O2 + HDO2 ==================================================================
 # the data in the table cover the range 190-260nm
-h2o2xdata = readandskip(xsecfolder*"H2O2.dat",'\t',Float64, skipstart=3)
-# HDO2 STUFF SHOULD GO HERE BUT I DON'T HAVE IT TODO: FIND IT
-hdo2xdata = deepcopy(h2o2xdata) #readandskip(xsecfolder*"HDO2.dat",'\t',Float64, skipstart = 3)
+h2o2xdata = readandskip(xsecfolder*h2o2file,'\t',Float64, skipstart=3)
+hdo2xdata = readandskip(xsecfolder*hdo2file,'\t',Float64, skipstart=3)
 
 # from 260-350 the following analytic calculation fitting the
 # temperature dependence is recommended:
@@ -1623,14 +1688,14 @@ end
 
 # O3 ===========================================================================
 # including IR bands which must be resampled from wavenumber
-o3xdata = readandskip(xsecfolder*"O3.dat",'\t',Float64, skipstart=3)
+o3xdata = readandskip(xsecfolder*o3file,'\t',Float64, skipstart=3)
 o3ls = o3xdata[:,1]
 o3xs = o3xdata[:,2]
-o3chapxdata = readandskip(xsecfolder*"O3Chap.dat",'\t',Float64, skipstart=3)
+o3chapxdata = readandskip(xsecfolder*o3chapfile,'\t',Float64, skipstart=3)
 o3chapxdata[:,1] = map(p->1e7/p, o3chapxdata[:,1])
 for i in [round(Int, floor(minimum(o3chapxdata[:,1]))):round(Int, ceil(maximum(o3chapxdata))-1);]
     posss = getpos(o3chapxdata, x->i<x<i+1)
-    dl = diff([map(x->o3chapxdata[x[1],1],posss); i])
+    dl = diff([map(x->o3chapxdata[x[1],1], posss); i])
     x = map(x->o3chapxdata[x[1],2],posss)
     ax = reduce(+,map(*,x, dl))/reduce(+,dl)
     global o3ls = [o3ls; i+0.5]
@@ -1640,7 +1705,7 @@ o3xdata = reshape([o3ls; o3xs],length(o3ls),2)
 
 # O2 ===========================================================================
 # including temperature-dependent Schumann-Runge bands.
-o2xdata = readandskip(xsecfolder*"O2.dat",'\t',Float64, skipstart = 3)
+o2xdata = readandskip(xsecfolder*o2file,'\t',Float64, skipstart = 3)
 function binupO2(list)
     ret = Float64[];
     for i in [176:203;]
@@ -1656,13 +1721,13 @@ function binupO2(list)
     end
     return transpose(reshape(ret, 4, 203-176+1))
 end
-o2schr130K = readandskip(xsecfolder*"130-190.cf4",'\t',Float64, skipstart = 3)
+o2schr130K = readandskip(xsecfolder*o2_130_190,'\t',Float64, skipstart = 3)
 o2schr130K[:,1] = map(p->1e7/p, o2schr130K[:,1])
 o2schr130K = binupO2(o2schr130K)
-o2schr190K = readandskip(xsecfolder*"190-280.cf4",'\t',Float64, skipstart = 3)
+o2schr190K = readandskip(xsecfolder*o2_190_280,'\t',Float64, skipstart = 3)
 o2schr190K[:,1] = map(p->1e7/p, o2schr190K[:,1])
 o2schr190K = binupO2(o2schr190K)
-o2schr280K = readandskip(xsecfolder*"280-500.cf4",'\t',Float64, skipstart = 3)
+o2schr280K = readandskip(xsecfolder*o2_280_500,'\t',Float64, skipstart = 3)
 o2schr280K[:,1] = map(p->1e7/p, o2schr280K[:,1])
 o2schr280K = binupO2(o2schr280K)
 
@@ -1723,16 +1788,15 @@ ho2xsect = reshape([ho2xsect; map(ho2xsect_l, ho2xsect)],length(ho2xsect),2)
 do2xsect = deepcopy(ho2xsect) # TODO: find crosssection for DO2
 
 # H2 & HD ======================================================================
-# TODO: find crosssection for HD
-h2xdata = readandskip(xsecfolder*"binnedH2.csv",',',Float64, skipstart=4)
-hdxdata = readandskip(xsecfolder*"binnedH2.csv",',',Float64, skipstart=4)
+h2xdata = readandskip(xsecfolder*h2file,',',Float64, skipstart=4)
+hdxdata = readandskip(xsecfolder*hdfile,',',Float64, skipstart=4)
 
 # OH & OD ======================================================================
-ohxdata = readandskip(xsecfolder*"binnedOH.csv",',',Float64, skipstart=4)
-ohO1Dxdata = readandskip(xsecfolder*"binnedOHo1D.csv",',',Float64, skipstart=4)
-odxdata = readandskip(xsecfolder*"OD.csv",',',Float64, skipstart=3)
+ohxdata = readandskip(xsecfolder*ohfile,',',Float64, skipstart=4)
+ohO1Dxdata = readandskip(xsecfolder*oho1dfile,',',Float64, skipstart=4)
+odxdata = readandskip(xsecfolder*odfile,',',Float64, skipstart=3)
 
-# SOLAR FLUX ===================================================================
+# PHOTODISSOCIATION ============================================================
 function padtosolar(crosssection::Array{Float64, 2})
     # a function to take an Nx2 array and pad it with zeroes until it's the
     # same length as the solar flux. Returns the cross sections only, as
@@ -1800,15 +1864,15 @@ absorber = Dict(:JCO2ion =>:CO2,
                 );
 
 #=
-this is a dictionary of the 1-nm photodissociation or photoionization
-cross-sections important in the atmosphere. keys are symbols found in
-jratelist. each entry is an array of arrays, yielding the wavelengths
-and cross-sections for each altitude in the atmosphere.
+    this is a dictionary of the 1-nm photodissociation or photoionization
+    cross-sections important in the atmosphere. keys are symbols found in
+    jratelist. each entry is an array of arrays, yielding the wavelengths
+    and cross-sections for each altitude in the atmosphere.
 
-NOTE: jspecies refers to the photodissociation or photoionization
-cross section for a particular species which produces a UNIQUE SET OF
-PRODUCTS. In this sense, crosssection has already folded in quantum
-efficiency considerations.
+    NOTE: jspecies refers to the photodissociation or photoionization
+    cross section for a particular species which produces a UNIQUE SET OF
+    PRODUCTS. In this sense, crosssection has already folded in quantum
+    efficiency considerations.
 =#
 crosssection = Dict{Symbol, Array{Array{Float64}}}()
 # now add the cross-sections
@@ -1984,7 +2048,7 @@ setindex!(crosssection,
           map(xs->quantumyield(xs,((x->true, 0),)), map(t->hdo2xsect(t),
           map(Temp, alt))), :JHDO2toHDOpO1D)
 
-# ==============================================================================
+# Solar Input ------------------------------------------------------------------
 lambdas = Float64[]
 for j in Jratelist, ialt in 1:length(alt)
     global lambdas = union(lambdas, crosssection[j][ialt][:,1])
@@ -2005,91 +2069,85 @@ end
 # this is the unitialized array for storing values
 solarabs = fill(fill(0.,size(solarflux, 1)),length(alt)-2);
 
-function update_Jrates!(n_current::Dict{Symbol, Array{Float64, 1}})
-    #=
-    this function updates the photolysis rates stored in n_current to
-    reflect the altitude distribution of absorbing species
-    =#
-    #    global solarabs::Array{Array{Float64, 1},1}
-
-    # Initialize an array, length=num of altitude levels - 2.
-    # Each sub-array is an array of length 2000, corresponding to 2000 wavelengths.
-    solarabs = Array{Array{Float64}}(undef, length(alt)-2)
-    for i in range(1, length=length(alt)-2)
-        solarabs[i] = zeros(Float64, 2000)
-    end
-
-    nalt = size(solarabs, 1)
-    nlambda = size(solarabs[1],1)
-
-    for jspecies in Jratelist
-        species = absorber[jspecies]
-
-        jcolumn = 0.
-        for ialt in [nalt:-1:1;]
-            #get the vertical column of the absorbing constituient
-            jcolumn += n_current[species][ialt]*dz
-            # if jspecies==:JO2toOpO
-            #     println(string("At alt = ",alt[ialt+1],
-            #                    ", n_",species," = ",n_current[species][ialt],
-            #                    ", jcolumn = ",jcolumn))
-            #     println("and solarabs[ialt] is $(solarabs[ialt]) before we do axpy")
-            #     readline(STDIN)
-            # end
-
-            # add the total extinction to solarabs:
-            # multiplies air column density at all wavelengths by crosssection
-            # to get optical depth
-            BLAS.axpy!(nlambda, jcolumn, crosssection[jspecies][ialt+1], 1,
-                       solarabs[ialt],1)
-        end
-    end
-
-    #solarabs now records the total optical depth of the atmosphere at
-    #each wavelength and altitude
-
-    # actinic flux at each wavelength is solar flux diminished by total
-    # optical depth
-    for ialt in [1:nalt;]
-        solarabs[ialt] = solarflux[:,2].*exp.(-solarabs[ialt])
-    end
-
-    #each species absorbs according to its cross section at each
-    #altitude times the actinic flux.
-    for j in Jratelist
-        for ialt in [1:nalt;]
-            n_current[j][ialt] = BLAS.dot(nlambda, solarabs[ialt], 1,
-                                          crosssection[j][ialt+1], 1)
-        end
-    end
-end
-
-function timeupdate(mytime)
-    for i = 1:15
-        # following 2 lines are for troubleshooting/observing change over time
-        plotatm()
-        println("dt: ", mytime)
-        update!(n_current, mytime)
-    end
-    # show()
-    ## yield()
-end
-
 
 ################################################################################
 ################################# LOGGING ######################################
 ################################################################################
 
-towrite = "Finished simulation for $(argarray[1]) experiment with values: \n"
+# crosssection dict for logging purposes =======================================
+xsect_dict = Dict("CO2"=>[co2file, co2exfile], 
+              "H2O, HDO"=>[h2ofile, hdofile],
+              "H2O2, HDO2"=>[h2o2file, hdo2file],
+              "O3"=>[o3file, o3chapfile],
+              "O2"=>[o2file, o2_130_190, o2_190_280, o2_280_500],
+              "H2, HD"=>[h2file, hdfile],
+              "OH, OD"=>[ohfile, oho1dfile, odfile])
+
+# Water stuff ==================================================================
+
+# Plot initial water profile with detatched layer ==============================
+figure(figsize=(6,8))
+semilogx(H2Oinitfrac/1e-6, alt[2:end-1]/1e5, color="blue", linewidth=5,
+         label=L"H$_2$O base")
+semilogx(detachedlayer/1e-6, alt[2:end-1]/1e5, color="red", linewidth=2,
+         linestyle="--", label=L"enhanced H$_2$O")
+semilogx(HDOinitfrac/1e-6, alt[2:end-1]/1e5, color="navy", linewidth=5,
+         label=L"HDO base")
+semilogx(detachedlayer_HDO/1e-6, alt[2:end-1]/1e5, color="darkred", linewidth=2,
+         linestyle="--", label=L"enhanced HDO")
+xlabel("Volume Mixing Ratio [ppm]")
+ylabel("Altitude [km]")
+title(L"H$_2$O and HDO model profiles")
+text(0.08, 59, "0.07ppm", color="darkred")
+text(5, 57, "80ppm", color="red")
+legend()
+savefig(experimentdir*FNext*"/perturbed_water_profile.png")
+show()
+
+# this computes the total water column in precipitable microns -----------------
+# n_col(molecules/cm2)/(molecules/mol)*(gm/mol)*(1cc/gm) = (cm)*(10^4μm/cm)
+# = precipitable μm
+H2Oprmicromsum = (sum(([MR; H2Oinitfrac]) .* map(z->n_tot(n_current, z), alt[1:end-1]))*dz)/6.02e23*18*1e4
+HDOprmicromsum = (sum(([MR*DH; HDOinitfrac]) .* map(z->n_tot(n_current, z), alt[1:end-1]))*dz)/6.02e23*19*1e4
+
+f = open(experimentdir*FNext*"/water_column_"*FNext*".txt", "w")
+write(f, "Total H2O col: $(sum(n_current[:H2O])*2e5)\n")
+write(f, "Total HDO col: $(sum(n_current[:HDO])*2e5)\n")
+write(f, "Total water col: $(sum(n_current[:H2O])*2e5 + sum(n_current[:HDO])*2e5)\n")
+write(f, "Water at surface: $(n_current[:H2O][1] + n_current[:H2O][1])\n")
+write(f, "H2O at surface (pr μm): $(H2Oprmicromsum)\n")
+write(f, "All H2O + detached layer: $((sum(([MR; detachedlayer]) .* map(z->n_tot(n_current, z), alt[1:end-1]))*dz)/6.02e23*18*1e4) \n")
+write(f, "HDO at surface (pr μm): $(HDOprmicromsum)\n")
+write(f, "All HDO + detached layer: $((sum(([MR*DH; detachedlayer_HDO]) .* map(z->n_tot(n_current, z), alt[1:end-1]))*dz)/6.02e23*19*1e4) \n")
+write(f, "Sum of H2O and HDO no detached layer: $(H2Oprmicromsum+HDOprmicromsum)")
+close(f)
+
+
+# Temperature and water parameters =============================================
 if argarray[1]=="temp"
-    towrite2 = "T_0 = $(argarray[2]), T_tropo = $(argarray[3]), T_exo = $(argarray[4]), water init = 1e-4, DH=5.5"
+    temp_water_string = "T_0=$(argarray[2]), T_tropo=$(argarray[3]), 
+                         T_exo=$(argarray[4]), water init = 1e-4, DH=5.5"
 elseif argarray[1]=="water"
-    towrite2 = "T_0 = 192, T_tropo = 110, T_exo = 199, water init = $(argarray[2]), DH=5.5"
+    temp_water_string = "T_0=192, T_tropo=110, T_exo=199, 
+                         water init=$(argarray[2]), DH=5.5"
 elseif argarray[1] == "dh"
-    towrite2 = "T_0 = 192, T_tropo = 110, T_exo = 199, water init =1e-4, DH=$(argarray[2])"
+    temp_water_string = "T_0=192, T_tropo=110, T_exo=199, water init=1e-4, 
+                         DH=$(argarray[2])"
 end
+
+# Write the log ================================================================
 f = open(experimentdir*FNext*"/convergence_"*FNext*".txt", "w")
-write(f, towrite)
-write(f, towrite2)
-write(f, "ALERT: ran with solar max condtions")
+write(f, "Finished simulation for $(argarray[1]) experiment with values: \n")
+write(f, temp_water_string
+for k in keys(xsect_dict)
+    write(f, k*": "*join(xsect_dict[k], ", ")*"\n")
+end)
+# boundary conditions
+write(f, "n: number density at surface, f: flux at top, v: velocity at top\n")
+for k2 in keys(speciesbclist)
+    bcstring = join([join(speciesbclist[k2][1, :], "="), 
+                     join(speciesbclist[k2][2, :], "=")], ", ")
+    write(f, string(k2)*": "*bcstring*"\n")
+end
+# write(f, "ALERT: ran with solar max condtions") # Toggle for solar max
 close(f)
