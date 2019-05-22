@@ -249,6 +249,7 @@ function DH_alt_prof_plot(DHproflist, exps, v, s, optext="", optlegend="")
     optext: an optional extension that will be appended to v, for 
             the temperature case where it goes in the temp_tradeoff_plots 
             folder but the files also specify exobase, tropopause, etc.
+    optlegend: an optional string to put into the legend
     =#
 
     # do the DH altitudinal profile plot
@@ -279,7 +280,7 @@ function DH_alt_prof_plot(DHproflist, exps, v, s, optext="", optlegend="")
     # save it again but with log x-axis 
     xscale("log")
     xticks(rotation=45)
-    savepath = plotpath*v*optext*"_DH_prof_LOG.png"
+    savepath = plotpath*"/"*v*optext*"_DH_prof_LOG.png"
     savefig(savepath, bbox_inches="tight")
     close(fig)
 end
@@ -332,6 +333,8 @@ function CO_O2_plot(xvals, ydict, xlab, pathkey, meanX, s, tempkey="")
         ax2.set_yscale("log")
     end
 
+    println("at past studies...")
+    println(lookupkey)
     # past studies
     ax2.errorbar(paststudies[lookupkey]["nair"], 0.14, capsize=2, zorder=10,
                  yerr=reshape([0.05; 0.43], 2, 1), color="xkcd:brick red",
@@ -369,7 +372,7 @@ function get_colors(L)
     return c
 end
 
-function rel_change_plot(d, x, xlab, folderpath, ylog="yes")
+function rel_change_plot(d, x, xlab, folderpath, FNext="", ylog="yes")
     #=
     d: a dictionary, keys are particular metrics varied, values are lists of the
        values of that metric for different variations of whatever x is (water, 
@@ -398,7 +401,7 @@ function rel_change_plot(d, x, xlab, folderpath, ylog="yes")
     end
     legend(bbox_to_anchor=(1.1, 1))
     plotpath = "../Results/TradeoffPlots/"*folderpath
-    savepath = "relchange.png"
+    savepath = "relchange"*FNext*".png"
     savefig(plotpath*savepath, bbox_inches="tight")
     close(fig)
 end
@@ -582,7 +585,7 @@ function make_Oflux_var_plots(abs_or_mr, path=lead)
 
     # Easier to deal with D/H profiles separately due to different array size
     DHprofs = Array{Any}(undef, length(Ofluxvals_str), length(alt)-2)
-    HDprofs = Array{Any}(undef, length(Ofluxvals_str), length(alt)-2)
+    #HDprofs = Array{Any}(undef, length(Ofluxvals_str), length(alt)-2)
 
     # loop through O flux files 
     i = 1
@@ -621,7 +624,7 @@ function make_Oflux_var_plots(abs_or_mr, path=lead)
         append!(odict["f"], 2*(Df/Hf) / (ncur[:HDO][1]/ncur[:H2O][1]))
         # D/H profile
         DHprofs[i, :] = ncur[:D] ./ ncur[:H]  # altitude profiles
-        HDprofs[i, :] = ncur[:HD] ./ [n_tot(ncur, i) for i in alt[2:end-1]]
+        #HDprofs[i, :] = ncur[:HD] ./ [n_tot(ncur, i) for i in alt[2:end-1]]
         i += 1
     end
 
@@ -722,10 +725,11 @@ function make_T_var_plots(abs_or_mr, path=lead)
             tempfilelist[k] = [path*"temp_192_110_"*t*"/converged_standardwater_D_temp_192_110_"*t*".h5" for t in tvals_str[k]]
         end
     end
-    meanT = Dict("surface"=>192, "tropopause"=>110, "exobase"=>199)  # nominal 
+    meanT = Dict("surface"=>190, "tropopause"=>110, "exobase"=>200)  # nominal 
     oflux = 1.2e8
     nologplease = ["Dflux", "CO/O2", "DH"]  # don't logscale everything
     q = abs_or_mr == "abs" ? " abundance " : " mixing ratio " # set label
+    subfolder = abs_or_mr == "abs" ? "abs/" : "mr/"
 
     # loop through which temp is varied and construct a list of datapoints
     for experiment in keys(tvals) # loop across the dictionary
@@ -733,8 +737,11 @@ function make_T_var_plots(abs_or_mr, path=lead)
         tdict = Dict("O2"=>[], "HD"=>[], "H2"=>[], "H"=>[], "D"=>[], "CO"=>[], 
                      "Hflux"=>[], "Dflux"=>[], "f"=>[], "CO/O2"=>[], "O3"=>[], 
                      "DH"=>[])
+        normed_dict = Dict()
         DHprofs = Array{Any}(undef, length(tvals_str[experiment]), length(alt)-2)
-        HDprofs = Array{Any}(undef, length(tvals_str[experiment]), length(alt)-2)
+        #HDprofs = Array{Any}(undef, length(tvals_str[experiment]), length(alt)-2)
+        individual_plots = filter!(e->e∉["CO", "O2", "CO/O2", "DH"], 
+                                        [k for k in keys(tdict)])
 
         # now loop through the values for each varied temp
         i = 1
@@ -781,7 +788,7 @@ function make_T_var_plots(abs_or_mr, path=lead)
             append!(tdict["f"], 2*(Df/Hf) / (ncur[:HDO][1]/ncur[:H2O][1]))
             # D/H profile
             DHprofs[i, :] = ncur[:D] ./ ncur[:H]  # altitude profile
-            HDprofs[i, :] = ncur[:HD] ./ [n_tot(ncur, i) for i in alt[2:end-1]]
+            #HDprofs[i, :] = ncur[:HD] ./ [n_tot(ncur, i) for i in alt[2:end-1]]
             i += 1
         end
 
@@ -794,8 +801,18 @@ function make_T_var_plots(abs_or_mr, path=lead)
         rcParams["xtick.labelsize"] = 22
         rcParams["ytick.labelsize"] = 22
         
-        individual_plots = filter!(e->e∉["CO", "O2", "CO/O2", "DH"], 
-                                        [k for k in keys(tdict)])
+        xlab = experiment*" temperature"
+
+        # Do the relative increase plot
+        for k in keys(tdict)
+            base_i = findfirst(isequal(meanT[experiment]), tvals[experiment])
+            normed_dict[k] = normalize(tdict[k], base_i)
+        end
+
+        if abs_or_mr == "mr"
+            rel_change_plot(normed_dict, tvals_str[experiment], xlab, 
+                            "temp_tradeoff_plots/", "_temp_"*experiment)# "no")
+        end
 
         # loop through the parameters of interest and plot them
         for i in individual_plots
@@ -805,6 +822,20 @@ function make_T_var_plots(abs_or_mr, path=lead)
             grid(zorder=0, color="gainsboro")
             plot(tvals[experiment], tdict[i], marker="o", zorder=10) 
             ax.axvline(meanT[experiment], color="black", label="Nominal value")
+            xlabel(xlab)
+            xticks(ticks=tvals[experiment], labels=tvals_str[experiment], 
+                   rotation=45)
+            ylabdict = Dict("DH"=>"D/H ratio (/1.6e-4) @ 150 km",
+                            "D"=>"D"*q*"at exobase",
+                            "H"=>"H"*q*"at exobase",
+                            "Dflux"=>L"$\phi_D$ (cm$^{-2}$s$^{-1}$)",
+                            "Hflux"=>L"$\phi_H$ (cm$^{-2}$s$^{-1}$)",
+                            "f"=>"fractionation factor (f)",
+                            "O2"=>"O"*L"_2"*q,
+                            "HD"=>"HD"*q,
+                            "H2"=>"H"*L"_2"*q,
+                            "O3"=>"O"*L"_3"*q)
+            ylabel(ylabdict[i])
 
             # past studies
             if experiment=="surface"
@@ -841,22 +872,6 @@ function make_T_var_plots(abs_or_mr, path=lead)
                            ["325", "350"]), rotation=45)
                 end
             end 
-        
-            # set axes labels
-            xlabel(experiment*" temperature")
-            xticks(ticks=tvals[experiment], labels=tvals_str[experiment], 
-                   rotation=45)
-            ylabdict = Dict("DH"=>"D/H ratio (/1.6e-4) @ 150 km",
-                            "D"=>"D"*q*"at exobase",
-                            "H"=>"H"*q*"at exobase",
-                            "Dflux"=>L"$\phi_D$ (cm$^{-2}$s$^{-1}$)",
-                            "Hflux"=>L"$\phi_H$ (cm$^{-2}$s$^{-1}$)",
-                            "f"=>"fractionation factor (f)",
-                            "O2"=>"O"*L"_2"*q,
-                            "HD"=>"HD"*q,
-                            "H2"=>"H"*L"_2"*q,
-                            "O3"=>"O"*L"_3"*q)
-            ylabel(ylabdict[i])
 
             # manual ylim and yscale for things not in nologplease
             if ~(i in nologplease)#maximum(tdict[i])/minimum(tdict[i]) > 10#
@@ -867,7 +882,7 @@ function make_T_var_plots(abs_or_mr, path=lead)
             end
 
             # set savepath
-            plotpath = "../Results/TradeoffPlots/temp_tradeoff_plots/"
+            plotpath = "../Results/TradeoffPlots/temp_tradeoff_plots/"*subfolder
             savepath = plotpath*join(["temp", experiment], "_")*"_"*i*".png"
             savefig(savepath, bbox_inches="tight")
             close(fig)
@@ -875,10 +890,10 @@ function make_T_var_plots(abs_or_mr, path=lead)
 
         # CO/O2 plot
         CO_O2_plot(tvals[experiment], tdict, "Temperature at "*experiment, 
-                   "temp", meanT[experiment], "_"*experiment)
+                   "temp", meanT[experiment], subfolder, "_"*experiment)
 
         # D/H altitude plot
-        DH_alt_prof_plot(DHprofs, tvals_str[experiment], "temp", "_"*experiment, 
+        DH_alt_prof_plot(DHprofs, tvals_str[experiment], "temp", subfolder, "_"*experiment, 
                          latexstring("T_{$(experiment[1:3])}"))
 
         println("Finished temperature ", experiment)
@@ -890,6 +905,6 @@ end
 # make_water_var_plots("abs")
 # println()
 # make_Oflux_var_plots("abs")
-make_Oflux_var_plots("mr")
+# make_Oflux_var_plots("mr")
 # println()
-# make_T_var_plots()
+make_T_var_plots("mr")
