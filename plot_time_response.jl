@@ -1,7 +1,10 @@
 ################################################################################
-# plot_time_response.jl - Plots the response of the atmosphere at select
-# snapshots designated by time indices. Can plot all species, selected species,
-# or the top most populous species.
+# plot_time_response.jl
+# TYPE: MAIN (plot maker)
+# WHICH: Perturbation experiments
+# DESCRIPTION: Plots the response of the atmosphere at a few selected snapshots
+# designated by time indices. Can plot all species, selected species, or the top
+# most populous species.
 #
 # Eryn Cangi
 # 31 August 2018
@@ -657,4 +660,4 @@ f2 = lead*"dh_5.5/one_year_response_to_80ppm_at_60km_return.h5"
 plot_top_spec(f1, [1, 606, 790, 999], true, "_return")
 
 
-# 10 days is 790 if you need it
+# 10 days is iter 790 if you need it

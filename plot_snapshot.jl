@@ -1,6 +1,9 @@
 ################################################################################
-# plot_snapshot.jl - Plots a snapshot of the atmospheric state at a specified
-# time index within the simulation.
+# plot_snapshot.jl 
+# TYPE: MAIN (plot maker)
+# WHICH: Perturbation experiments
+# DESCRIPTION: Plots a snapshot of the atmospheric state at a specified time 
+# index within the simulation.
 #
 # Eryn Cangi
 # 31 August 2018
@@ -10,6 +13,7 @@
 using PyPlot
 using HDF5
 using LaTeXStrings
+using PyCall
 
 const fullspecieslist = [:CO2, :O2, :O3, :H2, :OH, :HO2, :H2O, :H2O2, :O, :CO,
                          :O1D, :H, :N2, :Ar, :CO2pl, :HOCO,
@@ -65,7 +69,7 @@ function n_tot(n_current, z)
     return sum( [n_current[s][thisaltindex] for s in specieslist] )
 end
 
-function plot_snap(readfile, timevec, poster, convergefile=false, init=false)
+function plot_snap(thepath, readfile, timevec, poster, convergefile=false, init=false)
     #=
     Creates a plot of selected species volume mixing ratio by altitude at the
     equilibrium case. The data is given in number density by species and
@@ -89,6 +93,7 @@ function plot_snap(readfile, timevec, poster, convergefile=false, init=false)
     # read in species names and map them to symbols
     species = map(Symbol,h5read(readfile,"n_current/species"))
     species_str = map(String,h5read(readfile,"n_current/species"))
+
     # make some latex-formatted labels
     for n in (1:length(species))
         if species_str[n][1] != 'J'
@@ -173,19 +178,27 @@ function plot_snap(readfile, timevec, poster, convergefile=false, init=false)
         :N2 => "-",);
 
     # Font size settings
-    if poster==true
-        fs = Dict("ticks"=>16, "labels"=>22, "legend"=>18, "title"=>26, "spec"=>14)
-    elseif poster==false
-        fs = Dict("ticks"=>16, "labels"=>20, "legend"=>14, "title"=>22, "spec"=>14)
-    end
+    # if poster==true
+    #     fs = Dict("ticks"=>22, "labels"=>22, "legend"=>22, "title"=>26, "spec"=>18)
+    # elseif poster==false
+    #     fs = Dict("ticks"=>16, "labels"=>20, "legend"=>14, "title"=>22, "spec"=>14)
+    # end
+    # make plots pretty
+    rcParams = PyDict(matplotlib["rcParams"])
+    rcParams["font.sans-serif"] = ["Laksaman"]
+    rcParams["font.monospace"] = ["FreeMono"]
+    rcParams["font.size"] = 22
+    rcParams["axes.labelsize"]= 24
+    rcParams["xtick.labelsize"] = 22
+    rcParams["ytick.labelsize"] = 22
 
     # make a figure and set up some global labels
     fig, ax = subplots(figsize=(10,6))
 
     # do not change the following line and do not use tight_layout(), it conflicts
     subplots_adjust(wspace=0, bottom=0.15)
-    ax[:set_xlabel]("Volume Mixing Ratio [ppm]", fontsize=fs["labels"])
-    ax[:set_ylabel]("Altitude [km]", fontsize=fs["labels"])
+    ax[:set_xlabel]("Volume Mixing Ratio [ppm]")#, fontsize=fs["labels"])
+    ax[:set_ylabel]("Altitude [km]")#, fontsize=fs["labels"])
     y = alt[2:end-1]./10^5  # altitudes are always the same
 
     # Loop over times to make subplots
@@ -237,15 +250,17 @@ function plot_snap(readfile, timevec, poster, convergefile=false, init=false)
         for (s, sstr) in zip(species, species_str)
             # only plot some of the most important species
             if !contains(string(s), "J")  # do not plot J rates
-                if sstr in ["O_3", "H_2O_2", "HDO_2", "DO_2", "HO_2", "HD", "H_2", "H", "D", "H_2O", "HDO", "O", "O_2", "CO_2"]
+                if sstr in ["O_3", "H_2O_2", "HDO_2", "DO_2", "HO_2", "HD", 
+                            "H_2", "H", "D", "H_2O", "HDO", "O", "O_2", "CO_2"]
                     x = ncurrent_vmr[s]
 
-                    # set line thicknesses
-                    if sstr in ["H", "D"]
-                        lw = 3
-                    else
-                        lw = 1
-                    end
+                    lw = 1
+                    # set a special line thickness for H and D for certain plots
+                    # if sstr in ["H", "D"]
+                    #     lw = 3
+                    # else
+                    #     lw = 1
+                    # end
                     ax[:semilogx](x, y, linewidth=lw, alpha=0.85,
                                        color=speciescolor[s],
                                        linestyle=speciesstyle[s])
@@ -253,13 +268,13 @@ function plot_snap(readfile, timevec, poster, convergefile=false, init=false)
                     # stagger labels between top and bottom of plot =, easier to read
                     if sstr in ["HDO_2", "H_2O_2", "D", "H_2", "O_2"]
                         ax[:text](0.4*x[1], y[1]-12, latexstring(sstr),
-                                       color=speciescolor[s], fontsize=fs["spec"])
+                                       color=speciescolor[s])#, fontsize=fs["spec"])
                     elseif sstr=="CO_2"
                         ax[:text](0.1*x[1], y[1]-12, latexstring(sstr),
-                                       color=speciescolor[s], fontsize=fs["spec"])
+                                       color=speciescolor[s])#, fontsize=fs["spec"])
                     else
                         ax[:text](0.4*x[end], y[end]+4, latexstring(sstr),
-                                       color=speciescolor[s], fontsize=fs["spec"])
+                                       color=speciescolor[s])#, fontsize=fs["spec"])
                     end
 
                 end
@@ -268,12 +283,13 @@ function plot_snap(readfile, timevec, poster, convergefile=false, init=false)
                 ax[:set_ylim](-15,215)
                 ax[:set_xticks]([1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15])
                 #ax[:set_xlim](1e-17,5)
-                ax[:tick_params]("both",labelsize=fs["ticks"])
+                ax[:tick_params]("both")#,labelsize=fs["ticks"])
 
             end
         end
     end # loop over time vector
-    savefig("../notebookpics/snapshot_MAYBEFIX"*string(timevec[1])*".png")
+    savefig(thepath*"snapshot_forposter"*string(timevec[1])*".png")
+    show()
 end
 
 
@@ -282,10 +298,14 @@ end
 # plot_snap(rf, [1], true, false, false)
 
 
-base = "/data/GDrive-CU/Research/Results/VarWaterTemp"
-rf = base*"/temp_192_110_199/converged_standardwater_D_temp_192_110_199.h5"
+# base = "/data/GDrive-CU/Research/Results/VarWaterTemp"
+base = "/home/emc/GDrive-CU/Research/Results/VarWaterTemp/temp_192_110_199/"
+rf = base*"ppm_80_alt_60.h5"
+
+# this junk has to be here
 const alt = h5read(rf,"n_current/alt")
 n_alt_index=Dict([z=>clamp((i-1),1, length(alt)-2) for (i, z) in enumerate(alt)])
 
 
-plot_snap(rf, [1299], true, true, false) # for convergence files
+# plot_snap(base, rf, [1299], true, true, false) # for final step of convergence files
+plot_snap(base, rf, [1], true, false, true) # for init of other files

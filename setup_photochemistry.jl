@@ -1,6 +1,9 @@
 ################################################################################
-# setup_photochemistry.jl --- sets up a photochemistry experiment with water
-# enhancements in the middle atmosphere of Mars.
+# setup_photochemistry.jl
+# TYPE: MAIN (main script)
+# WHICH: Perturbation experiments
+# DESCRIPTION: sets up a photochemistry experiment with water enhancements in 
+# the middle atmosphere of Mars.
 #
 # originally by Mike Chaffin, 2017.
 # Updated by Eryn Cangi 2018+.
@@ -856,7 +859,6 @@ function timeupdate(mytime)
     ## yield()
 end
 
-
 function next_timestep(nstart::Array{Float64, 1},
                        nthis::Array{Float64, 1},
                        inactive::Array{Float64, 1},
@@ -952,8 +954,6 @@ end
     #plotatm()
 end #update!
 
-
-
 ################################################################################
 ################################## MAIN SETUP ##################################
 ################################################################################
@@ -962,7 +962,6 @@ end #update!
 # temp Tsurf Ttropo Texo ---- OR ---- water mixingratio
 # examples: temp 192 110 199      water 1e-3
 argarray = isdefined(:arg_from_rnp) ? arg_from_rnp : "Missing cmd line arguments"
-#filebase = @isdefined :FNext ? FNext : "BROKEN" # TODO: Test this works
 println("ALERT: running sim for $(FNext)")
 
 # Set up the converged file to read from and load the simulation state at init.
@@ -985,12 +984,57 @@ end
 n_alt_index=Dict([z=>clamp((i-1),1, length(alt)-2) for (i, z) in enumerate(alt)])
 
 # Set plot fonts to be good for posters and presentations
-PyCall.PyDict(matplotlib["rcParams"])["font.sans-serif"] = ["Laksaman"]
+PyCall.PyDict(matplotlib["rcParams"])["font.sans-serif"] = ["Louis George Caf?"]
 PyCall.PyDict(matplotlib["rcParams"])["font.monospace"] = ["FreeMono"]
 PyCall.PyDict(matplotlib["rcParams"])["font.size"] = 22
 PyCall.PyDict(matplotlib["rcParams"])["axes.labelsize"]= 24
 PyCall.PyDict(matplotlib["rcParams"])["xtick.labelsize"] = 22
 PyCall.PyDict(matplotlib["rcParams"])["ytick.labelsize"] = 22
+
+ # Style dictionaries for plotting much later
+speciescolor = Dict( # H group
+                      :H => "#ff0000", :D => "#ff0000", # red
+                      :H2 => "#e526d7", :HD =>  "#e526d7", # dark pink/magenta
+
+                      # hydroxides
+                      :OH => "#7700d5", :OD => "#7700d5", # purple
+
+                      # water group (roughly, I ain't a chemist)
+                      :H2O => "#0083dc", :HDO => "#0083dc", # cornflower blue
+                      :H2O2 => "#0000ff", :HDO2 => "#0000ff", # true blue
+                      :HO2 => "#046868", :DO2 => "#046868",  # dark teal
+
+                      # O group
+                      :O1D => "#808000", # olive
+                      :O => "#1a6115",   # forest green
+                      :O2 => "#15da09",  # kelly/grass green
+                      :O3 => "#269e56",  # light green
+
+                      # CO group
+                      :CO2 => "#d18564",   # dark peach
+                      :CO2pl => "#614215", # brown
+                      :CO => "#ff6600",    # orange
+                      :HOCO => "#e8ba8c", :DOCO => "#e8ba8c",  #tannish
+
+                      # nonreactants
+                      :Ar => "#808080", :N2 => "#cccccc",);  # grays
+
+speciesstyle = Dict( # H group
+                      :H => "-", :D => "--",
+                      :H2 => "-",  :HD => "--",
+                      # hydroxides
+                      :OH => "-", :OD => "--",
+                      # "water group" (roughly, I ain't a chemist)
+                      :H2O => "-", :HDO => "--",
+                      :H2O2 => "-", :HDO2 => "--",
+                      :HO2 => "-", :DO2 => "--",
+                      # O group
+                      :O1D => "-", :O => "-", :O2 => "-", :O3 => "-",
+                      # CO group
+                      :CO => "-", :CO2 => "-", :CO2pl => "-",
+                      :HOCO => "-", :DOCO => "--",
+                      # nonreactants
+                      :Ar => "-", :N2 => "-",);
 
 ################################################################################
 ##################### FUNDAMENTAL CONSTANTS AND SPECIES LIST ###################
@@ -1047,52 +1091,6 @@ const Jratelist=[:JCO2ion,:JCO2toCOpO,:JCO2toCOpO1D,:JO2toOpO,:JO2toOpO1D,
                  :JHDOtoHDpO1D, :JHDOtoHpDpO, :JODtoOpD, :JHDtoHpD, :JDO2toODpO,
                  :JHDO2toDO2pH, :JHDO2toHO2pD, :JHDO2toHDOpO1D, :JODtoO1DpD
                  ];
-
-
- # Style dictionaries for plotting much later
-speciescolor = Dict( # H group
-                      :H => "#ff0000", :D => "#ff0000", # red
-                      :H2 => "#e526d7", :HD =>  "#e526d7", # dark pink/magenta
-
-                      # hydroxides
-                      :OH => "#7700d5", :OD => "#7700d5", # purple
-
-                      # water group (roughly, I ain't a chemist)
-                      :H2O => "#0083dc", :HDO => "#0083dc", # cornflower blue
-                      :H2O2 => "#0000ff", :HDO2 => "#0000ff", # true blue
-                      :HO2 => "#046868", :DO2 => "#046868",  # dark teal
-
-                      # O group
-                      :O1D => "#808000", # olive
-                      :O => "#1a6115",   # forest green
-                      :O2 => "#15da09",  # kelly/grass green
-                      :O3 => "#269e56",  # light green
-
-                      # CO group
-                      :CO2 => "#d18564",   # dark peach
-                      :CO2pl => "#614215", # brown
-                      :CO => "#ff6600",    # orange
-                      :HOCO => "#e8ba8c", :DOCO => "#e8ba8c",  #tannish
-
-                      # nonreactants
-                      :Ar => "#808080", :N2 => "#cccccc",);  # grays
-
-speciesstyle = Dict( # H group
-                      :H => "-", :D => "--",
-                      :H2 => "-",  :HD => "--",
-                      # hydroxides
-                      :OH => "-", :OD => "--",
-                      # "water group" (roughly, I ain't a chemist)
-                      :H2O => "-", :HDO => "--",
-                      :H2O2 => "-", :HDO2 => "--",
-                      :HO2 => "-", :DO2 => "--",
-                      # O group
-                      :O1D => "-", :O => "-", :O2 => "-", :O3 => "-",
-                      # CO group
-                      :CO => "-", :CO2 => "-", :CO2pl => "-",
-                      :HOCO => "-", :DOCO => "--",
-                      # nonreactants
-                      :Ar => "-", :N2 => "-",);
 
 # Altitude grid discretization
 const zmin = alt[1]
@@ -1363,58 +1361,21 @@ end
 ############################### WATER PROFILES #################################
 ################################################################################
 
-# H2O Saturation Vapor Pressure ================================================
+# H2O Water Profile ============================================================
 # 1st term is a conversion factor to convert to (#/cm^3) bceause the 2nd
-# term (from Washburn 1924) gives the value in mmHg and converts to #/cm^3.
+# term (from Washburn 1924) gives the value in mmHg
 Psat(T::Float64) = ((133.3*1e-6)/(boltzmannK * T))*(10^(-2445.5646/T + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 - 6.757169))
-H2Osat = map(x->Psat(x), map(Temp, alt)) # array in #/cm^3 by altitude
-H2Osatfrac = H2Osat./map(z->n_tot(n_current, z),alt)  # get SVP as fraction of total atmo
+H2Osat = map(x->Psat(x), map(Temp, alt)) # array in #/cm^3 by altitude 
+H2Osatfrac = H2Osat./map(z->n_tot(n_current, z), alt)  # get SVP as fraction of total atmo
 # set H2O SVP fraction to minimum for all alts above first time min is reached
-H2Oinitfrac = H2Osatfrac[1:something(findfirst(isequal(minimum(H2Osatfrac)),H2Osatfrac), 0)]
+H2Oinitfrac = H2Osatfrac[1:something(findfirst(isequal(minimum(H2Osatfrac)), H2Osatfrac), 0)]
 H2Oinitfrac = [H2Oinitfrac;   # ensures no supersaturation
                fill(minimum(H2Osatfrac), length(alt)-2-length(H2Oinitfrac))]
-               
-# HDO Saturation Vapor Pressure (for boundary conditions) ======================
-function LHDO(T)
-   #=
-   Latent heat of vaporization of HDO as a function of temperature in K.
-   This analytical function was determined by fitting data from
-   https://pubs.acs.org/doi/pdf/10.1021/cr60292a004 (Jancso 1974, page 734)
-   and extrapolating. It is probably not accurate outside the range of the data,
-   which was 0-100, but it shouldn't be too far off.
 
-   The data was in cal/mol versus Celsius. We convert to kJ/mol below.
-   Fit was done in Python in a separate script. parameters below are the output
-   from said fit.
-   =#
-   a = -0.02806171415983739
-   b = 89.51209910268079
-   c = 11918.608639939 # this is cal/mol
-   return (a*(T-b)^2 + c) / 239 # returns in kJ/mol
-end
-
-function Psat_HDO(T)
-   #=
-   Analytical expression for saturation vapor pressure of HDO, using analytical
-   latent heat for HDO determined from fitting to data from Jancso 1974.
-   The boiling temperature for HDO (100.7°C, 373.85K) and standard pressure are
-   used as reference temp/pressure. The gas constant for HDO was calculated as
-   R_HDO = kB/m, which probably came from Pierrehumbert's text.
-   =#
-   R_HDO = 434.8 # J/kgK
-   L_HDO = LHDO(T) * 1000 / 0.019 # kJ/mol * J/kJ * mol / kg = J / kg
-   T0 = 373.85 # boiling temp for liquid HDO
-   P0 = 101325 # standard pressure
-   return P0*exp(-(L_HDO/R_HDO)*(1/T - 1/T0))
-end
-
-HDOsat = map(x->Psat_HDO(x), map(Temp, alt))
-#HDOsat = H2Osat * DH
-
-# Set up the water profile =====================================================
-if argarray[1] == "water"  # make constant in the lower atmosphere (well-mixed)
-    H2Oinitfrac[findall(x->x<60e5, alt)] .= argarray[2]
-    MR = argarray[2] # mixing ratio 
+# make profile constant in the lower atmosphere (well-mixed)
+if args[1] == "water"
+    H2Oinitfrac[findall(x->x<60e5, alt)] .= args[2]
+    MR = args[2] # mixing ratio 
 else
     H2Oinitfrac[findall(x->x<30e5, alt)] .= 1e-4
     MR = 1e-4
@@ -1424,13 +1385,61 @@ for i in [1:length(H2Oinitfrac);]
     H2Oinitfrac[i] = H2Oinitfrac[i] < H2Osatfrac[i+1] ? H2Oinitfrac[i] : H2Osatfrac[i+1]
 end
 
+# HDO water profile ============================================================
+function LHDO(T)
+    #=
+    Latent heat of vaporization of HDO as a function of temperature in K.
+    This analytical function was determined by fitting data from
+    https://pubs.acs.org/doi/pdf/10.1021/cr60292a004 (Jancso 1974, page 734)
+    and extrapolating. It is probably not accurate outside the range of the data,
+    which was 0-100, but it shouldn't be too far off.
+
+    The data was in cal/mol versus Celsius. We convert to kJ/mol below.
+    Fit was done in Python in a separate script. parameters below are the output
+    from said fit.
+    =#
+    a = -0.02806171415983739
+    b = 89.51209910268079
+    c = 11918.608639939 # this is cal/mol
+    return (a*(T-b)^2 + c) / 239 # returns in kJ/mol
+end
+
+function Psat_HDO(T)
+    #=
+    Analytical expression for saturation vapor pressure of HDO, using analytical
+    latent heat for HDO determined from fitting to data from Jancso 1974.
+    The boiling temperature for HDO (100.7°C, 373.85K) and standard pressure are
+    used as reference temp/pressure. The gas constant for HDO was calculated as
+    R_HDO = kB/m, which probably came from Pierrehumbert's text.
+
+    returns the pressure in #/cm^3. The conversion from N/m^2 to #/cm^3 is 
+    divide by N*m (that is, kT) and multiply by the conversion to cm from m 
+    (1e-6). 
+
+    Input
+        T: a single temperature in K
+    Output:
+        Pressure in #/cm^3
+    =#
+    R_HDO = 434.8 # J/kgK
+    L_HDO = LHDO(T) * 1000 / 0.019 # kJ/mol * J/kJ * mol / kg = J / kg
+    T0 = 373.85 # boiling temp for liquid HDO
+    P0 = 101325 # standard pressure
+    Psat_pascals = P0*exp(-(L_HDO/R_HDO)*(1/T - 1/T0))
+    # To convert to #/cm^3 from Pa:
+    # Pa = Nm^-2 (1/(Nm)) * (1e-6 m^3 / 1 cm^3)
+    return Psat_pascals*(1e-6)/(boltzmannK*T) # return in #/cm^3
+end
+
+HDOsat = map(x->Psat_HDO(x), map(Temp, alt))
 # use D/H ratio to set population of HDO
 HDOinitfrac = H2Oinitfrac * DH  # initial profile for HDO
 
-# add in a detached water vapor layer, which looks kinda like a gaussian packet
+# Detached parcel - water enhancement ===========================================
+# add in a detached water vapor parcel, which looks kinda like a gaussian packet
 # floating at 60km (Maltagliati 2013)
-detachedlayer = 1e-6*map(x->80 .* exp(-((x-60)/12.5)^2),alt[2:end-1]/1e5)+H2Oinitfrac
-detachedlayer_HDO = detachedlayer * DH
+parcel = 1e-6*map(x->80 .* exp(-((x-60)/12.5)^2),alt[2:end-1]/1e5)+H2Oinitfrac
+parcel_HDO = parcel * DH
 
 ################################################################################
 ############################# BOUNDARY CONDITIONS ##############################
@@ -2089,11 +2098,11 @@ xsect_dict = Dict("CO2"=>[co2file, co2exfile],
 figure(figsize=(6,8))
 semilogx(H2Oinitfrac/1e-6, alt[2:end-1]/1e5, color="blue", linewidth=5,
          label=L"H$_2$O base")
-semilogx(detachedlayer/1e-6, alt[2:end-1]/1e5, color="red", linewidth=2,
+semilogx(parcel/1e-6, alt[2:end-1]/1e5, color="red", linewidth=2,
          linestyle="--", label=L"enhanced H$_2$O")
 semilogx(HDOinitfrac/1e-6, alt[2:end-1]/1e5, color="navy", linewidth=5,
          label=L"HDO base")
-semilogx(detachedlayer_HDO/1e-6, alt[2:end-1]/1e5, color="darkred", linewidth=2,
+semilogx(parcel_HDO/1e-6, alt[2:end-1]/1e5, color="darkred", linewidth=2,
          linestyle="--", label=L"enhanced HDO")
 xlabel("Volume Mixing Ratio [ppm]")
 ylabel("Altitude [km]")
@@ -2116,9 +2125,9 @@ write(f, "Total HDO col: $(sum(n_current[:HDO])*2e5)\n")
 write(f, "Total water col: $(sum(n_current[:H2O])*2e5 + sum(n_current[:HDO])*2e5)\n")
 write(f, "Water at surface: $(n_current[:H2O][1] + n_current[:H2O][1])\n")
 write(f, "H2O at surface (pr μm): $(H2Oprmicromsum)\n")
-write(f, "All H2O + detached layer: $((sum(([MR; detachedlayer]) .* map(z->n_tot(n_current, z), alt[1:end-1]))*dz)/6.02e23*18*1e4) \n")
+write(f, "All H2O + detached layer: $((sum(([MR; parcel]) .* map(z->n_tot(n_current, z), alt[1:end-1]))*dz)/6.02e23*18*1e4) \n")
 write(f, "HDO at surface (pr μm): $(HDOprmicromsum)\n")
-write(f, "All HDO + detached layer: $((sum(([MR*DH; detachedlayer_HDO]) .* map(z->n_tot(n_current, z), alt[1:end-1]))*dz)/6.02e23*19*1e4) \n")
+write(f, "All HDO + detached layer: $((sum(([MR*DH; parcel_HDO]) .* map(z->n_tot(n_current, z), alt[1:end-1]))*dz)/6.02e23*19*1e4) \n")
 write(f, "Sum of H2O and HDO no detached layer: $(H2Oprmicromsum+HDOprmicromsum)")
 close(f)
 

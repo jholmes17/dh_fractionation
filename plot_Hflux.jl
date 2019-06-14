@@ -1,5 +1,9 @@
 ################################################################################
-# plot_Hflux.jl - Plots the flux of H and D over time.
+# plot_Hflux.jl
+# TYPE: MAIN (plot maker)
+# WHICH: Perturbation experiments
+# DESCRIPTION: Plots the flux of H and D over time (millions of years). Plot is
+# similar to the one in Mike's original paper. 
 #
 # Eryn Cangi 
 # 31 August 2018

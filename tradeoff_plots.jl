@@ -1,6 +1,9 @@
 ################################################################################
-# make_tradeoff_plots.jl - make trade off plots showing H and D flux and other
-# variables as a function of random things such as water column. 
+# make_tradeoff_plots.jl
+# TYPE: MAIN (plot maker)
+# WHICH: Equilibrium experiments
+# DESCRIPTION: make trade off plots showing H and D flux and other variables as 
+# a function of random things such as water column. 
 
 # Eryn Cangi
 # 5 April 2019
@@ -443,7 +446,7 @@ function make_water_plots(water_x, d, DHdata, q, nom_i, s)
         # set savepath
         plotpath = "../Results/TradeoffPlots/water_tradeoff_plots/" * s
         savepath = "water_"*i*".png"
-        
+
         savefig(plotpath*savepath, bbox_inches="tight")
         close(fig)
     end
@@ -765,16 +768,16 @@ function make_rel_change_plots(output_MR, output_abs, ex)
     ax[1].axhline(0, color="black")
 
     # text labels
-    pts1 = Dict("exobase"=>Dict("CO"=>[155, 1], "O2"=>[155, -1.4], 
-                                "H2"=>[157, 9], "O3"=>[165, -3.2]),
-                 "tropopause"=>Dict("CO"=>[70, 1], "O2"=>[70, -1.5], 
-                                    "H2"=>[74, 10], "O3"=>[85,-3.2]), 
+    pts1 = Dict("exobase"=>Dict("CO"=>[155, 1], "O2"=>[165, -2.8], 
+                                "H2"=>[157, 9], "O3"=>[155, -1.2]),
+                 "tropopause"=>Dict("CO"=>[70, 1], "O2"=>[70, -1.8], 
+                                    "H2"=>[74, 10], "O3"=>[85,-1]), 
                  "surface"=>Dict("CO"=>[192.5, 1], "O2"=>[202, -1.1], 
-                                 "H2"=>[192, 2.4], "O3"=>[210, -2.5]), 
+                                 "H2"=>[192, 2.4], "O3"=>[210, -0.4]), 
                  "water"=>Dict("CO"=>[0.5, 7], "O2"=>[0.5, -0.5],  
-                               "H2"=>[0.5, 2.7], "O3"=>[0.5, -2.4]), 
+                               "H2"=>[0.5, 2.5], "O3"=>[0.5, 0.8]), 
                  "O flux"=>Dict("CO"=>[3.5, -1.2], "O2"=>[0.5, 1.2], 
-                                "H2"=>[1.5, -0.5], "O3"=>[1.3, -2]))
+                                "H2"=>[1.5, -0.5], "O3"=>[1.3, 1.8]))
     ax[1].text(pts1[ex]["CO"][1], pts1[ex]["CO"][2], L"$f_{\mathrm{CO}}$", 
                color=c1[1])
     ax[1].text(pts1[ex]["O2"][1], pts1[ex]["O2"][2], L"$f_{\mathrm{O}_2}$", 
@@ -840,16 +843,16 @@ function make_rel_change_plots(output_MR, output_abs, ex)
     end
 
     # text labels
-    pts2 = Dict("exobase"=>Dict("HD"=>[150, 3], "H"=>[150, 1.6], "D"=>[165, 0.6], 
-                                "Hflux"=>[150, 0.5], "Dflux"=>[280, 50]),
-                "tropopause"=>Dict("HD"=>[70, 2.55], "H"=>[70, 1.4], "D"=>[140, 1.2],
-                                   "Hflux"=>[150, 1.2], "Dflux"=>[150, 6]), 
-                "surface"=>Dict("HD"=>[210, 1.4], "H"=>[220, 0.4], "D"=>[193, 0.8],
+    pts2 = Dict("exobase"=>Dict("HD"=>[150, 3], "H"=>[150, 10], "D"=>[150, 1.15], 
+                                "Hflux"=>[150, 0.6], "Dflux"=>[150, 0.08]),
+                "tropopause"=>Dict("HD"=>[70, 2.6], "H"=>[70, 3.6], "D"=>[70, 1.5],
+                                   "Hflux"=>[70, 0.65], "Dflux"=>[70, 0]), 
+                "surface"=>Dict("HD"=>[210, 1.4], "H"=>[193, 0.6], "D"=>[210, 0.7],
                                 "Hflux"=>[215, 1.1], "Dflux"=>[200, 1.7]), 
-                "water"=>Dict("HD"=>[0.7, 1.15], "H"=>[0.3, 1.01], "D"=>[0.5, 1.165], 
-                              "Hflux"=>[1, 1.01], "Dflux"=>[0.4, 1.18]), 
-                "O flux"=>Dict("HD"=>[7, 0.75], "H"=>[0.2, 0.55], "D"=>[0, 0.82],
-                               "Hflux"=>[2, 0.5], "Dflux"=>[3, 0.4])
+                "water"=>Dict("HD"=>[0.45, 1.165], "H"=>[0.35, 0.99], "D"=>[0.5, 1.15], 
+                              "Hflux"=>[0.7, 1.005], "Dflux"=>[0.4, 1.18]), 
+                "O flux"=>Dict("HD"=>[7, 0.75], "H"=>[1, 0.45], "D"=>[0, 0.35],
+                               "Hflux"=>[2, 0.6], "Dflux"=>[3, 0.4])
                 )
     ax[2].text(pts2[ex]["HD"][1], pts2[ex]["HD"][2], "HD", color=c2[1])
     ax[2].text(pts2[ex]["H"][1], pts2[ex]["H"][2], "H", color=c2[2])
@@ -1054,11 +1057,11 @@ function analyze_T(abs_or_mr, make_plots=false, path=lead)
     for k in keys(tvals)
         tvals_str[k] = [string(trunc(Int, x)) for x in tvals[k]]
         if k == "surface"
-            tempfilelist[k] = [path*"temp_"*t*"_110_199"*"/converged_standardwater_D_temp_"*t*"_110_199.h5" for t in tvals_str[k]]
+            tempfilelist[k] = [path*"temp_"*t*"_110_200"*"/converged_standardwater_D_temp_"*t*"_110_200.h5" for t in tvals_str[k]]  # TODO: revert if necessary
         elseif k == "tropopause"
-            tempfilelist[k] = [path*"temp_192_"*t*"_199"*"/converged_standardwater_D_temp_192_"*t*"_199.h5" for t in tvals_str[k]]
+            tempfilelist[k] = [path*"temp_190_"*t*"_200"*"/converged_standardwater_D_temp_190_"*t*"_200.h5" for t in tvals_str[k]]
         elseif k == "exobase"
-            tempfilelist[k] = [path*"temp_192_110_"*t*"/converged_standardwater_D_temp_192_110_"*t*".h5" for t in tvals_str[k]]
+            tempfilelist[k] = [path*"temp_190_110_"*t*"/converged_standardwater_D_temp_190_110_"*t*".h5" for t in tvals_str[k]]
         end
     end
     meanT = Dict("surface"=>190, "tropopause"=>110, "exobase"=>200)  # nominal 
@@ -1082,11 +1085,11 @@ function analyze_T(abs_or_mr, make_plots=false, path=lead)
         for (tv, tfile) in zip(tvals[experiment], tempfilelist[experiment])
             # set the temperature profile
             if experiment == "surface" 
-                temps = [tv, 110.0, 199.0]
+                temps = [tv, 110.0, 200.0]  # TODO: revert if needed
             elseif experiment == "tropopause"
-                temps = [192.0, tv, 199.0]
+                temps = [190.0, tv, 200.0] # TODO: revert if needed
             elseif experiment == "exobase"
-                temps = [192.0, 110.0, tv]
+                temps = [190.0, 110.0, tv]  # TODO: revert if needed
             end
 
             # get the current array
@@ -1142,8 +1145,8 @@ end
 
 # Function calls ===============================================================
 
-makeplots = false
-write_new_files = false
+makeplots = true
+write_new_files = true
 
 water_data_mr = analyze_water("mr", makeplots)
 water_data_abs = analyze_water("abs", makeplots)
@@ -1185,7 +1188,7 @@ end
 # Relative changes plot with two panels ========================================
 # panel 1: metrics CO, O2, O3, and H2
 # panel 2: all the other measureablesbles except fractionation factor
-# panel 3: frationatoin factor
+# panel 3: frationation factor
 
 make_rel_change_plots(water_data_mr, water_data_abs, "water")
 make_rel_change_plots(o_data_mr, o_data_abs, "O flux")

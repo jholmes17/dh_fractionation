@@ -1,5 +1,8 @@
 ################################################################################
-# plot_FF.jl --- plots fractionation factor over time from photochemistry
+# plot_FF.jl
+# TYPE: MAIN (plot maker)
+# WHICH: Perturbation experiments
+# DESCRIPTION: Plots fractionation factor over time from photochemistry
 # experiment results.
 #
 # Eryn Cangi 

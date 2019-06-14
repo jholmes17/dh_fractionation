@@ -1,13 +1,17 @@
 ################################################################################
-# check_eq.jl - Check if the atmosphere is in equilibrium by looking for
+# check_eq.jl
+# TYPE: Supporting (Verification)
+# WHICH: Equilibrium and perturbation experiments
+# DESCRIPTION: Check if the atmosphere is in equilibrium by looking for
 # Φ_O = 0.5Φ_{H+D}.
+#
 # Eryn Cangi
 # 11 September 2018
 # Currently tested for Julia: 0.7
 ################################################################################
 using HDF5
 
-# fundamental constants --------------------------------------------------------
+# fundamental constants ========================================================
 const boltzmannK = 1.38e-23;    # J/K
 const bigG = 6.67e-11;          # N m^2/kg^2
 const mH = 1.67e-27;            # kg
@@ -15,7 +19,7 @@ const marsM = 0.1075*5.972e24;  # kg
 const radiusM = 3396e5;         # cm
 DH = 5.5 * 1.6e-4               # SMOW value from Yung 1988
 
-# Experiment type and loading the file -----------------------------------------
+# Experiment type and loading the file =========================================
 # get arguments to use for accessing files 
 argarray = Any[ARGS[i] for i in 1:1:length(ARGS)] 
 if argarray[1] == "temp"
@@ -33,7 +37,7 @@ alt = h5read(rf,"n_current/alt")
 
 const zmax = alt[end];
 
-# Functions --------------------------------------------------------------------
+# Functions ====================================================================
 function speciesbcs(species)
     get(speciesbclist,
         species,
@@ -128,7 +132,54 @@ function effusion_velocity(Texo::Float64, m::Float64)
     return v
 end
 
-# Set up non-function code that is necessary -----------------------------------
+Psat(T::Float64) = (133.3/(10^6 * boltzmannK * T))*(10^(-2445.5646/T + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 - 6.757169))
+
+function LHDO(T)
+    #=
+    Latent heat of vaporization of HDO as a function of temperature in K.
+    This analytical function was determined by fitting data from
+    https://pubs.acs.org/doi/pdf/10.1021/cr60292a004 (Jancso 1974, page 734)
+    and extrapolating. It is probably not accurate outside the range of the data,
+    which was 0-100, but it shouldn't be too far off.
+
+    The data was in cal/mol versus Celsius. We convert to kJ/mol below.
+    Fit was done in Python in a separate script. parameters below are the output
+    from said fit.
+    =#
+    a = -0.02806171415983739
+    b = 89.51209910268079
+    c = 11918.608639939 # this is cal/mol
+    return (a*(T-b)^2 + c) / 239 # returns in kJ/mol
+end
+
+function Psat_HDO(T)
+    #=
+    Analytical expression for saturation vapor pressure of HDO, using analytical
+    latent heat for HDO determined from fitting to data from Jancso 1974.
+    The boiling temperature for HDO (100.7°C, 373.85K) and standard pressure are
+    used as reference temp/pressure. The gas constant for HDO was calculated as
+    R_HDO = kB/m, which probably came from Pierrehumbert's text.
+
+    returns the pressure in #/cm^3. The conversion from N/m^2 to #/cm^3 is 
+    divide by N*m (that is, kT) and multiply by the conversion to cm from m 
+    (1e-6). 
+
+    Input
+        T: a single temperature in K
+    Output:
+        Pressure in #/cm^3
+    =#
+    R_HDO = 434.8 # J/kgK
+    L_HDO = LHDO(T) * 1000 / 0.019 # kJ/mol * J/kJ * mol / kg = J / kg
+    T0 = 373.85 # boiling temp for liquid HDO
+    P0 = 101325 # standard pressure
+    Psat_pascals = P0*exp(-(L_HDO/R_HDO)*(1/T - 1/T0))
+    # To convert to #/cm^3 from Pa:
+    # Pa = Nm^-2 (1/(Nm)) * (1e-6 m^3 / 1 cm^3)
+    return Psat_pascals*(1e-6)/(boltzmannK*T) # return in #/cm^3
+end
+
+# Set up non-function code that is necessary ===================================
 if argarray[1]=="temp"
     Temp(z::Float64) = Tpiecewise(z, parse(Float64,argarray[2]), 
                                      parse(Float64,argarray[3]), 
@@ -139,10 +190,9 @@ else
     Temp(z::Float64) = Tpiecewise(z, 192.0, 110.0, 199.0)
 end
 
-Psat(T::Float64) = (133.3/(10^6 * boltzmannK * T))*(10^(-2445.5646/T + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 - 6.757169))
 # H2Osat is an array of H2O SVP in 1/cm^3, a number per volume, by altitude
 H2Osat = map(x->Psat(x), map(Temp, alt))
-HDOsat = H2Osat*DH
+HDOsat = map(x->Psat_HDO(x), map(Temp, alt))
 
 H_effusion_velocity = effusion_velocity(Temp(zmax),1.0)
 H2_effusion_velocity = effusion_velocity(Temp(zmax),2.0)
@@ -161,9 +211,8 @@ const speciesbclist=Dict(
                 :H=>["f" 0.; "v" H_effusion_velocity],
                 :D=>["f" 0.; "v" D_effusion_velocity],
                );
-# ------------------------------------------------------------------------------
 
-# Calculate the flux ratio -----------------------------------------------------
+# Calculate the flux ratio =====================================================
 Of = 1.2e8
 Hf = get_H_fluxes(rf)
 HDf = get_H_and_D_fluxes(rf)
@@ -173,4 +222,3 @@ println("H+D flux: ", HDf)
 println("H flux: ", Hf)
 println("Ratio: ", HDf/Of)
 println()
-# ------------------------------------------------------------------------------

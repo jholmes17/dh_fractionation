@@ -1,20 +1,20 @@
 ################################################################################
-# run_and_plot.jl --- Main script that runs the coupled photochemistry model
+# run_and_plot.jl
+# TYPE: MAIN (main script)
+# WHICH: Perturbation experiments
+# DESCRIPTION: Main script that runs the coupled photochemistry model
 # in setup_photochemistry.jl.
 # 
 # originally by Mike Chaffin, 2017.
 # Updated by Eryn Cangi 2018+. 
 # Currently tested for Julia: 0.7
-################################################################################
+###############################################################################
 
-################################################################################
-################################### MODULES ####################################
-################################################################################
 using Distributed
 
-################################################################################
-############################# FUNCTION DEFINITIONS #############################
-################################################################################
+###############################################################################
+############################# FUNCTION DEFINITIONS ############################
+###############################################################################
 
 @everywhere function runwaterprofile(n_current, ppmadd, peakalt, dtlist, filename)
     #=
@@ -255,27 +255,26 @@ function get_hdo_ppm(filename)
     return hdoppmvec
 end
 
-################################################################################
-##################################### SETUP ####################################
-################################################################################
+###############################################################################
+##################################### SETUP ###################################
+###############################################################################
 
-# collect arguments and set up file name extension =============================
+# collect arguments and set up file name extension ============================
 # collect arguments, make available to all scripts
-arg_from_rnp = Any[ARGS[i] for i in 1:1:length(ARGS)] 
-@eval @everywhere arg_from_rnp=$arg_from_rnp
+args = Any[ARGS[i] for i in 1:1:length(ARGS)] 
+@eval @everywhere args=$args
 
 # Set up FNext, extension to filenames specifying an experiment type
 # for temp/water/dh variation experiments
-if arg_from_rnp[1] == "temp"
-    FNext = "temp_$(arg_from_rnp[2])_$(arg_from_rnp[3])_$(arg_from_rnp[4])"
-elseif arg_from_rnp[1] == "water"
-    FNext = "water_$(arg_from_rnp[2])"
-elseif arg_from_rnp[1] == "dh"
-    FNext = "dh_$(arg_from_rnp[2])"
-end
+# set up extension to the filename (FNext) for temp/water variation experiments
+FNext_chooser = Dict("temp" => "temp_$(args[2])_$(args[3])_$(args[4])",
+                     "water" => "water_$(args[2])", 
+                     "dh" => "dh_$(args[2])")
+FNext = FNext_chooser[args[1]]
+
 @eval @everywhere FNext=$FNext
 
-# Load files and run initial time update =======================================
+# Load files and run initial time update ======================================
 scriptdir = "/home/emc/GDrive-CU/Research/chaffincode-working/" 
 experimentdir = "/home/emc/GDrive-CU/Research/Results/"  
 # scriptdir = "/data/GDrive-CU/Research/chaffincode-working/"
@@ -290,7 +289,7 @@ println("ALERT: Using file: ", readfile)
 @everywhere include("setup_photochemistry.jl") 
 @everywhere @time update!(n_current,0.)
 
-# Set up inputs: timesteps and water profiles ==================================
+# Set up inputs: timesteps and water profiles =================================
 # Run the simulation with logarithmic time steps TODO: change logspace to base for 1.0
 @everywhere timepts = logspace(log10(1), log10(1e7*3.14e7), 1000)#base .^ range(1, stop=1e7*3.14e7, length=1000)
 @everywhere timediff = timepts[2:end]-timepts[1:end-1]
@@ -306,9 +305,9 @@ parmsvec = reshape(parmsvec,length(parmsvec))
 filenamevec = [string(experimentdir*FNext*"/ppm_", a[1], "_alt_", a[2], ".h5")
                for a in parmsvec]
 
-################################################################################
-################################ RUN SIMULAIONS ################################
-################################################################################
+###############################################################################
+################################ RUN SIMULAIONS ###############################
+###############################################################################
 
 pmap(x->println(string("parmsvec[i][1]=",x[1],", parmsvec[i][2]=",x[2],",
      filename=", x[3])), [[p;f] for (p,f) in zip(parmsvec,filenamevec)])
@@ -335,7 +334,7 @@ pmap(x->runwaterprofile(n_current, x[1], x[2], timediff, x[3]),
 println("Finished with water profiles")
 pmap(get_all_rates_and_fluxes,filenamevec)
 
-# Calculate H, D, H+D flux at exobase due to each experiment ===================
+# Calculate H, D, H+D flux at exobase due to each experiment ==================
 println("Doing H fluxes")
 Hfluxes = pmap(get_H_fluxes,filenamevec)
 lhfl = length(Hfluxes[1,1])
@@ -366,7 +365,7 @@ for lp in 1:length(parmsvec)
     writeHDfluxes[ippm,ialt,:] = [parmsvec[lp]; HDfluxes[lp]]
 end
 
-# Calculate the water profiles =================================================
+# Calculate the water profiles ================================================
 waterprofs = map(get_water_ppm,filenamevec)
 writewaterprof = fill(0.0, (length(waterppmvec), length(wateraltvec), 
                             length(alt)-2+2))
@@ -381,7 +380,7 @@ for lp in 1:length(parmsvec)
 end
 
 
-# WRITE OUT H, D, H+D ESCAPE FLUX HISTORY ======================================
+# WRITE OUT H, D, H+D ESCAPE FLUX HISTORY =====================================
 println("Writing H esc file")
 hfile = experimentdir*FNext*"/H_esc_flux_history.h5"
 h5open(hfile, isfile(hfile) ? "r+" : "w") do file

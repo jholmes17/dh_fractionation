@@ -1,5 +1,9 @@
 ################################################################################
-# Functions to estimate water lost from Mars.
+# estimate_water.jl
+# TYPE: MAIN (analysis)
+# WHICH: Equilibrium and perturbation experiments
+# DESCRIPTION: Functions to estimate water lost from Mars.
+#
 # Formalized 1 February 2019
 # Eryn Cangi
 # Currently tested for Julia: 0.7
