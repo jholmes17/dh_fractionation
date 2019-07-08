@@ -33,6 +33,10 @@ function fluxsymbol(x)
 end
 
 function get_ncurrent(readfile)
+    #=
+    Retrieves the matrix of species concentrations by altitude from an HDF5
+    file containing a converged atmosphere.
+    =#
     n_current_tag_list = map(Symbol, h5read(readfile,"n_current/species"))
     n_current_mat = h5read(readfile,"n_current/n_current_mat");
     n_current = Dict{Symbol, Array{Float64, 1}}()
@@ -40,10 +44,14 @@ function get_ncurrent(readfile)
     for ispecies in [1:length(n_current_tag_list);]
         n_current[n_current_tag_list[ispecies]] = reshape(n_current_mat[:,ispecies],length(alt)-2)
     end
-    n_current
+    return n_current
 end
 
 function write_ncurrent(n_current, filename)
+    #=
+    Writes out the current state of species concentrations by altitude to a file
+    (for converged atmosphere). 
+    =# 
     n_current_mat = Array{Float64}(undef, length(alt)-2, 
                                    length(collect(keys(n_current))));
     for ispecies in [1:length(collect(keys(n_current)));]
@@ -56,33 +64,33 @@ function write_ncurrent(n_current, filename)
     h5write(filename,"n_current/species",map(string, collect(keys(n_current))))
 end
 
-function readandskip(a, delim::Char, T::Type; skipstart=0)
-    # function to read in data from a file, skipping zero or more lines at
-    # the beginning.
-    a = open(a,"r")
+function readandskip(f, delim::Char, T::Type; skipstart=0)
+    #= 
+    function to read in data from a file, skipping zero or more lines at the 
+    beginning.
+    =# 
+    f = open(f,"r")
     if skipstart>0
         for i in [1:skipstart;]
-            readline(a)
+            readline(f)
         end
     end
-    a = readdlm(a, delim, T)
+    f = readdlm(f, delim, T)
 end
 
 # Density functions ============================================================
 
 function n_tot(n_current, z)
-    # get the total number density at a given altitude
+    #= get the total number density at a given altitude =#
     thisaltindex = n_alt_index[z]
     return sum( [n_current[s][thisaltindex] for s in specieslist] )
 end
 
 function meanmass(n_current, z)
-    # find the mean molecular mass at a given altitude
+    #= find the mean molecular mass at a given altitude =#
     thisaltindex = n_alt_index[z]
-
     c = [n_current[sp][thisaltindex] for sp in specieslist]
     m = [speciesmolmasslist[sp] for sp in specieslist]
-
     return sum(c.*m)/sum(c)
 end
 
@@ -90,7 +98,7 @@ end
 
 function scaleH(z, T::Float64, mm::Real)
     #= Computes the scale height of the atmosphere for the mean molar mass =#
-    boltzmannK*T/(mm*mH*marsM*bigG)*(((z+radiusM)*1e-2)^2)*1e2
+    return boltzmannK*T/(mm*mH*marsM*bigG)*(((z+radiusM)*1e-2)^2)*1e2
     # constants are in MKS. Convert to m and back to cm.
 end
 
@@ -154,15 +162,17 @@ end
     and bottom of the atmosphere.
 =#
 
-function fluxcoefs(z, dz, ntv, Kv, Dv, Tv, Hsv, H0v, species)
-    #= function to generate coefficients of the transport network.
-    K: eddy diffusion coefficient
-    D: molecular diffusion coefficient
-    T: temperature
-    Hs: scale height by species
-    H0: mean atmospheric scale height
+function fluxcoefs(z, dz, Kv, Dv, Tv, Hsv, H0v, species) #ntv,
+    #= 
+    function to generate coefficients of the transport network.
     z: altitude
     dz: altitude layer thickness ("resolution")
+    Kv: eddy diffusion coefficient
+    Dv: molecular diffusion coefficient
+    Tv: temperature
+    Hsv: scale height by species
+    H0v: mean atmospheric scale height
+    species: species symbol 
 
     v refers to "vector"
     u refers to "upper" (the upper parcel)
@@ -220,7 +230,6 @@ function fluxcoefs(z, dz, species, n_current)
 
     # return the coefficients
     return fluxcoefs(z, dz,
-              [ntm, nt0, ntp],
               [Km , K0, Kp],
               [Dm , D0, Dp],
               [Tm , T0, Tp],
@@ -230,10 +239,17 @@ function fluxcoefs(z, dz, species, n_current)
 end
 
 function lower_up(z, dz, species, n_current)
-    #= define transport coefficients for a given atmospheric layer for
+    #= 
+    define transport coefficients for a given atmospheric layer for
     transport from that layer to the one above. Variables ending in p refer to
     the layer above ("plus"), in 0 refer to the current layer at altitude z,
-    and ending in m refer to the layer below ("minus") =#
+    and ending in m refer to the layer below ("minus") 
+
+    z: altitude
+    dz: altitude layer thickness ("resolution")
+    species: species symbol
+    n_current: current atmospheric state in a matrix by altitude and species.
+    =#
     ntp = n_tot(n_current, z+dz)
     nt0 = n_tot(n_current, z)
     ntm = 1
@@ -255,7 +271,6 @@ function lower_up(z, dz, species, n_current)
 
     # return the coefficients
     return fluxcoefs(z, dz,
-              [ntm, nt0, ntp],
               [Km , K0, Kp],
               [Dm , D0, Dp],
               [Tm , T0, Tp],
@@ -265,10 +280,17 @@ function lower_up(z, dz, species, n_current)
 end
 
 function upper_down(z, dz, species, n_current)
-    #= define transport coefficients for a given atmospheric layer for transport
-    from that layer to the one below. Variables ending in p refer to
+    #= 
+    define transport coefficients for a given atmospheric layer for
+    transport from that layer to the one above. Variables ending in p refer to
     the layer above ("plus"), in 0 refer to the current layer at altitude z,
-    and ending in m refer to the layer below ("minus") =#
+    and ending in m refer to the layer below ("minus") 
+
+    z: altitude
+    dz: altitude layer thickness ("resolution")
+    species: species symbol
+    n_current: current atmospheric state in a matrix by altitude and species.
+    =#
     ntp = 1
     nt0 = n_tot(n_current, z)
     ntm = n_tot(n_current, z-dz)
@@ -290,7 +312,6 @@ function upper_down(z, dz, species, n_current)
 
     # return the coefficients
     return fluxcoefs(z, dz,
-              [ntm, nt0, ntp],
               [Km , K0, Kp],
               [Dm , D0, Dp],
               [Tm , T0, Tp],
@@ -356,11 +377,16 @@ end
 
 # chemistry equations ==========================================================
 
+# note: this whole section is basically witchcraft that Mike wrote and I've never
+# really looked into it in detail. I just trust it works. --Eryn
+
 function loss_equations(network, species)
-    #=  given a network of equations in the form of reactionnet above, this
+    #=  
+    given a network of equations in the form of reactionnet above, this
     function returns the LHS (reactants) and rate coefficient for all
     reactions where the supplied species is consumed, in the form of an array
-    where each entry is of the form [reactants, rate] =#
+    where each entry is of the form [reactants, rate] 
+    =#
 
     # get list of all chemical reactions species participates in:
     speciespos = getpos(network, species)
@@ -420,19 +446,21 @@ function production_equations(network, species)
 end
 
 function production_rate(network, species)
-    #= return a symbolic expression for the loss rate of species in the
-    supplied reaction network.=#
+    #= 
+    return a symbolic expression for the loss rate of species in the
+    supplied reaction network.
+    =#
 
     # get the reactants and rate coefficients
     peqn = production_equations(network, species)
 
-    # and add them all up
-    # take the product of each set of reactants and coeffecient
+    # add up and take the product of each set of reactants and coeffecient
     pval = :(+ ( $(map(x -> :(*($(x...))), peqn) ...) ))
 end
 
 function chemical_jacobian(chemnetwork, transportnetwork, specieslist, dspecieslist)
-    #= Compute the symbolic chemical jacobian of a supplied reaction network
+    #= 
+    Compute the symbolic chemical jacobian of a supplied reaction network
     for the specified list of species. Returns three arrays suitable for
     constructing a sparse matrix: lists of the first and second indices
     and the symbolic value to place at that index.
@@ -612,14 +640,11 @@ function chemJmat(nthis, inactive, Jrates, T, M, tup, tdown, tlower, tupper, dt)
     chemJj = Int64[]
     chemJval = Float64[]
 
-    (tclocal, tcupper, tclower) = chemJmat_local([nthismat[:,1];
-                                              nthismat[:,2];
-                                              fill(1.0, length(activespecies));
-                                              inactivemat[:,1];
-                                              Jrates[:,1];
-                                              T[1]; M[1];
-                                              tup[:,1]; tlower[:,1];
-                                              tdown[:,2]; tlower[:,2];dt]...)
+    (tclocal, tcupper, tclower) = chemJmat_local([nthismat[:,1]; nthismat[:,2];
+                                                  fill(1.0, length(activespecies));
+                                                  inactivemat[:,1]; Jrates[:,1];
+                                                  T[1]; M[1]; tup[:,1]; tlower[:,1];
+                                                  tdown[:,2]; tlower[:,2];dt]...)
     #add the influence of the local densities
     append!(chemJi, tclocal[1])
     append!(chemJj, tclocal[2])
@@ -634,11 +659,11 @@ function chemJmat(nthis, inactive, Jrates, T, M, tup, tdown, tlower, tupper, dt)
                                                       nthismat[:,ialt+1];
                                                       nthismat[:,ialt-1];
                                                       inactivemat[:,ialt];
-                                                      Jrates[:,ialt];
-                                                      T[ialt]; M[ialt];
-                                                      tup[:,ialt];tdown[:,ialt];
+                                                      Jrates[:,ialt]; T[ialt]; 
+                                                      M[ialt]; tup[:,ialt]; 
+                                                      tdown[:,ialt];
                                                       tdown[:,ialt+1];
-                                                      tup[:,ialt-1];dt]...)
+                                                      tup[:,ialt-1]; dt]...)
         # add the influence of the local densities
         append!(chemJi, tclocal[1].+(ialt-1)*length(activespecies))
         append!(chemJj, tclocal[2].+(ialt-1)*length(activespecies))
@@ -675,22 +700,17 @@ function chemJmat(nthis, inactive, Jrates, T, M, tup, tdown, tlower, tupper, dt)
     append!(chemJj,[1:length(nthis);])
     append!(chemJval, fill(1.0, length(nthis)))
 
-    sparse(chemJi,
-           chemJj,
-           chemJval,
-           length(nthis),
-           length(nthis),
-           +);
+    sparse(chemJi, chemJj, chemJval, length(nthis), length(nthis), +);
 end
 
 # auxiliary functions ==========================================================
 
-# TODO: again, the Any[] syntax might be removable once [[],[]] concatenation
-# is diabled rather than depracated
 function getpos(array, test::Function, n=Any[])
-    #= this function searches through an arbitrarily structured array
+    #= 
+    this function searches through an arbitrarily structured array
     finding elements that match the test function supplied, and returns a
-    one-dimensional array of the indicies of these elements. =#
+    one-dimensional array of the indicies of these elements. 
+    =#
     if !isa(array, Array)
         test(array) ? Any[n] : Any[]
     else
@@ -699,8 +719,10 @@ function getpos(array, test::Function, n=Any[])
 end
 
 function getpos(array, value)
-    #= overloading getpos for the most common use case, finding indicies
-    corresponding to elements in array that match value. =#
+    #= 
+    overloading getpos for the most common use case, finding indicies
+    corresponding to elements in array that match value. 
+    =#
     getpos(array, x->x==value)
 end
 
@@ -715,17 +737,17 @@ end
 # plotting functions ===========================================================
 function plotatm(n_current)
     clf()
-
-    for sp in fullspecieslist#[:O3, :H2O2, :HDO2, :DO2, :HO2, :HD, :H2, :H, :D, :H2O, :HDO, :O, :O2, :CO2]#
+    # selectspecies = [:O3, :H2O2, :HDO2, :DO2, :HO2, :HD, :H2, :H, :D, :H2O, 
+    #                  :HDO, :O, :O2, :CO2]
+    for sp in fullspecieslist
         plot(n_current[sp], alt[2:end-1]/1e5, color = speciescolor[sp],
              linewidth=2, label=sp, linestyle=speciesstyle[sp], zorder=1)
     end
     ylim(0, 200)
     xscale("log")
     xlim(1e-15, 1e18)
-    xlabel("Species concentration "*L"(cm^{-3})")
+    xlabel(L"Species concentration (cm$^{-3}$)")
     ylabel("Altitude [km]")
-    grid("on", color="gainsboro", zorder=0)
     legend(bbox_to_anchor=[1.01,1], loc=2, borderaxespad=0)
 end
 
@@ -789,7 +811,6 @@ function speciesbcs(species)
         species,
         ["f" 0.; "f" 0.])
 end
-
 
 # main routine functions =======================================================
 function update_Jrates!(n_current::Dict{Symbol, Array{Float64, 1}})
@@ -858,13 +879,9 @@ end
 
 function timeupdate(mytime)
     for i = 1:15
-        # following 2 lines are for troubleshooting/observing change over time
         plotatm()
-        #println("dt: ", mytime)
         update!(n_current, mytime)
     end
-    # show()
-    ## yield()
 end
 
 function next_timestep(nstart::Array{Float64, 1}, nthis::Array{Float64, 1},
@@ -885,7 +902,6 @@ function next_timestep(nstart::Array{Float64, 1}, nthis::Array{Float64, 1},
         # stuff concentrations into update function and jacobian
         fval = nthis - nstart - dt*ratefn(nthis, inactive, Jrates, T, M, tup,
                                           tdown, tlower, tupper)
-        #if eps>1e-2; updatemat=chemJmat([nthis, nochems, phrates, T, M, dt]...); end;
         updatemat = chemJmat(nthis, inactive, Jrates, T, M, tup, tdown, tlower,
                              tupper, dt)
 
@@ -893,7 +909,6 @@ function next_timestep(nstart::Array{Float64, 1}, nthis::Array{Float64, 1},
         nthis = nthis - (updatemat \ fval)
         # check relative size of update
         eps = maximum(abs.(nthis-nold)./nold)
-        #println("eps=",eps)
         iter += 1
         if iter>1e3; throw("too many iterations in next_timestep!"); end;
     end
@@ -904,19 +919,16 @@ end
     # update n_current using the coupled reaction network, moving to
     # the next timestep
 
-    #set auxiliary (not solved for in chemistry) species values
+    #set auxiliary (not solved for in chemistry) species values, photolysis rates
     inactive = deepcopy(Float64[[n_current[sp][ialt] for sp in inactivespecies, ialt in 1:length(intaltgrid)]...])
-
-    # set photolysis rates
     Jrates = deepcopy(Float64[n_current[sp][ialt] for sp in Jratelist, ialt in 1:length(intaltgrid)])
 
     # extract concentrations
     nstart = deepcopy([[n_current[sp][ialt] for sp in activespecies, ialt in 1:length(intaltgrid)]...])
     M = sum([n_current[sp] for sp in fullspecieslist])
 
-    # TODO: Is is really necessary to do this every time update! is run?
-    # set temperature and total atmospheric concentration
-    T = Float64[Temp(a) for a in alt[2:end-1]]
+    # set temperatures
+    T = Float64[Temp(a) for a in alt[2:end-1]]  
 
     # take initial guess
     nthis = deepcopy(nstart)
@@ -926,7 +938,7 @@ end
     tdown = Float64[issubset([sp],notransportspecies) ? 0.0 : fluxcoefs(a, dz, sp, n_current)[1] for sp in specieslist, a in alt[2:end-1]]
 
     # put the lower bcs and upper bcs in separate arrays; but they are not the
-    # right shape!
+    # right shape! TODO: make this more efficient?
     tlower_temp = [boundaryconditions(sp, dz, n_current)[1,:] for sp in specieslist]
     tupper_temp = [boundaryconditions(sp, dz, n_current)[2,:] for sp in specieslist]
 
@@ -954,8 +966,7 @@ end
     end
 
     update_Jrates!(n_current)
-    # plotatm() #TODO turn me off
-end #update!
+end
 
 
 ################################################################################
@@ -972,11 +983,11 @@ scriptdir = "/home/emc/GDrive-CU/Research/chaffincode-working/"
 experimentdir = "/home/emc/GDrive-CU/Research/Results/"#/VarWaterTemp/"
 
 # get command line arguments for experiment type. format:
-# temp Tsurf Ttropo Texo ---- OR ---- water mixingratio
-# examples: temp 190 110 200      water 1e-3
+# temp Tsurf Ttropo Texo; water <mixing ratio>; dh <multiplier>; Oflux <cm^-2s^-1>
+# examples: temp 190 110 200; water 1e-3; dh 8; Oflux 1.2e8
 args = Any[ARGS[i] for i in 1:1:length(ARGS)]
 
-# enter the arguments as extension to the filename (FNext)
+# enter the arguments as extension to the filename (FNext); 
 if args[1]=="temp"
     FNext = "temp_$(args[2])_$(args[3])_$(args[4])"
 elseif args[1]=="water"
@@ -989,13 +1000,13 @@ end
 
 # Set up the folder if it doesn't exist
 println("ALERT: running sim for $(FNext)")
-dircontents = readdir(experimentdir)
 println("Checking for existence of $(FNext) folder in results")
+dircontents = readdir(experimentdir)
 if FNext in dircontents
     println("Folder $(FNext) exists")
 else
     mkdir(experimentdir*FNext)
-    println("Folder did not exist; it has been created")
+    println("Created folder ", FNext)
 end
 
 # Set up the converged file to read from and load the simulation state at init.
@@ -1003,8 +1014,15 @@ readfile = scriptdir*"converged_standardwater.h5"
 println("ALERT: Using file: ", readfile)
 const alt = h5read(readfile,"n_current/alt")
 n_current = get_ncurrent(readfile)
-# following line is altitude index finder, must be defined after alt
 n_alt_index=Dict([z=>clamp((i-1),1, length(alt)-2) for (i, z) in enumerate(alt)])
+
+# set SVP to be fixed or variable with temperature
+if args[1] == "temp"
+    fix_SVP = true
+    println("ALERT: SVP will be fixed to that of the mean temperature profile ")
+else
+    fix_SVP = false  # temp doesn't vary in other experiments, so false for simplicity
+end
 
 # converts the strings that are numeric into numbers, needed to use in functions
 for i in 2:1:length(args)
@@ -1095,7 +1113,7 @@ const speciesmolmasslist = Dict(:CO2=>44, :O2=>32, :O3=>48, :H2=>2, :OH=>17,
                                 # deuterium chemistry:
                                 :HDO=>19, :OD=>18, :HDO2=>35, :D=>2, :DO2=>34,
                                 :HD=>3, :DOCO=>46);
-                                # note that Ar has a mass of 40 because its the most stable isotope
+                                # we use 40Ar because its the most stable isotope
 const fluxlist = map(fluxsymbol, fullspecieslist)
 
 # array of species for which photolysis is important. All rates should
@@ -1113,7 +1131,7 @@ const Jratelist=[:JCO2ion,:JCO2toCOpO,:JCO2toCOpO1D,:JO2toOpO,:JO2toOpO1D,
                  ];
 
 # Altitude grid discretization
-const zmin = alt[1]
+  const zmin = alt[1]
 const zmax = alt[end];
 const dz = alt[2]-alt[1];
 
@@ -1126,7 +1144,8 @@ threebody(k0, kinf) = :($k0*M/(1+$k0*M/$kinf)*0.6^((1+(log10($k0*M/$kinf))^2)^-1
 threebodyca(k0, kinf) = :($k0/(1+$k0/($kinf/M))*0.6^((1+(log10($k0/($kinf*M)))^2)^-1))
 
 # reactions and multipliers on base rates for deuterium reactions from Yung
-# 1988; base rates from this work or Chaffin+ 2017
+# 1988; base rates from this work or Chaffin+ 2017. Note: below, H-ana means 
+# the same reaction but with only H-bearing species.
 reactionnet = [   #Photodissociation
              [[:CO2], [:CO, :O], :JCO2toCOpO],
              [[:CO2], [:CO, :O1D], :JCO2toCOpO1D],
@@ -1136,28 +1155,28 @@ reactionnet = [   #Photodissociation
              [[:O3], [:O2, :O1D], :JO3toO2pO1D],
              [[:O3], [:O, :O, :O], :JO3toOpOpO],
              [[:H2], [:H, :H], :JH2toHpH],
-             [[:HD], [:H, :D], :JHDtoHpD],  # added 3/29 using H2 xsects
+             [[:HD], [:H, :D], :JHDtoHpD],
              [[:OH], [:O, :H], :JOHtoOpH],
              [[:OH], [:O1D, :H], :JOHtoO1DpH],
-             [[:OD], [:O, :D], :JODtoOpD], # added 3/28
+             [[:OD], [:O, :D], :JODtoOpD],
              [[:OD], [:O1D, :D], :JODtoO1DpD],
              [[:HO2], [:OH, :O], :JHO2toOHpO], # other branches should be here, but
                                                # have not been measured
-             [[:DO2], [:OD, :O], :JDO2toODpO],  # added 3/29 using HO2 xsects
+             [[:DO2], [:OD, :O], :JDO2toODpO],
              [[:H2O], [:H, :OH], :JH2OtoHpOH],
              [[:H2O], [:H2, :O1D], :JH2OtoH2pO1D],
              [[:H2O], [:H, :H, :O], :JH2OtoHpHpO],
              [[:HDO], [:H, :OD], :JHDOtoHpOD], 
              [[:HDO], [:D, :OH], :JHDOtoDpOH], 
-             [[:HDO], [:HD, :O1D], :JHDOtoHDpO1D], # added 3/28, inspiration from Yung89
-             [[:HDO], [:H, :D, :O], :JHDOtoHpDpO], # added 3/28, inspiration from Yung89
+             [[:HDO], [:HD, :O1D], :JHDOtoHDpO1D], # inspiration from Yung89
+             [[:HDO], [:H, :D, :O], :JHDOtoHpDpO], # inspiration from Yung89
              [[:H2O2], [:OH, :OH], :JH2O2to2OH],
              [[:H2O2], [:HO2, :H], :JH2O2toHO2pH],
              [[:H2O2], [:H2O, :O1D], :JH2O2toH2OpO1D],
-             [[:HDO2], [:OH, :OD], :JHDO2toOHpOD], #  Yung89; using xsect for H2O2
-             [[:HDO2], [:DO2, :H], :JHDO2toDO2pH], # added 3/30 using H2O2 xsects
-             [[:HDO2], [:HO2, :D], :JHDO2toHO2pD], # added 3/30 using H2O2 xsects
-             [[:HDO2], [:HDO, :O1D], :JHDO2toHDOpO1D], # added 3/30 using H2O2 xsects
+             [[:HDO2], [:OH, :OD], :JHDO2toOHpOD], # Yung89
+             [[:HDO2], [:DO2, :H], :JHDO2toDO2pH],
+             [[:HDO2], [:HO2, :D], :JHDO2toHO2pD],
+             [[:HDO2], [:HDO, :O1D], :JHDO2toHDOpO1D],
 
              # recombination of O
              [[:O, :O, :M], [:O2, :M], :(1.8*3.0e-33*(300 ./ T)^3.25)],
@@ -1177,12 +1196,12 @@ reactionnet = [   #Photodissociation
              [[:O1D, :HD], [:D, :OH], :(0.41*1.2e-10)], # Yung88: rate 0.41*H-ana (assumed). NIST 1e-10 @298K
              ## O1D + H2O
              [[:O1D, :H2O], [:OH, :OH], :(1.63e-10*exp(60 ./ T))], # Sander2011. Yung89: 2.2e-10; NIST: 1.62e-10*exp(65/T)
-             [[:O1D, :HDO], [:OD, :OH], :(1.63e-10*exp(60 ./ T))], # Yung88: rate  same as H-ana.
+             [[:O1D, :HDO], [:OD, :OH], :(1.63e-10*exp(60 ./ T))], # Yung88: rate same as H-ana.
 
              # loss of H2
-             [[:H2, :O], [:OH, :H], :(6.34e-12*exp(-4000 ./ T))], # Mike's rate? I believe this based on next 2 lines. ~10^-20 at 200K
-             [[:HD, :O], [:OH, :D], :(4.40e-12*exp(-4390 ./ T))], # not in Yung. rate: NIST. ~10^-21 at 200K
-             [[:HD, :O], [:OD, :H], :(1.68e-12*exp(-4400 ./ T))], # not in Yung. rate: NIST. ~10^-22 at 200K
+             [[:H2, :O], [:OH, :H], :(6.34e-12*exp(-4000 ./ T))], # Mike's rate?
+             [[:HD, :O], [:OH, :D], :(4.40e-12*exp(-4390 ./ T))], # NIST
+             [[:HD, :O], [:OD, :H], :(1.68e-12*exp(-4400 ./ T))], # NIST
              # HD and H2 exchange
              [[:H, :HD], [:H2, :D], :(6.31e-11*exp(-4038 ./ T))], # rate: Yung89. NIST rate is from 1959 for 200-1200K.
              [[:D, :H2], [:HD, :H], :(6.31e-11*exp(-3821 ./ T))], # NIST (1986, 200-300K): 8.19e-13*exp(-2700/T)
@@ -1193,11 +1212,11 @@ reactionnet = [   #Photodissociation
              [[:OH, :HD], [:H2O, :D], :((3 ./ 20.)*2.8e-12*exp(-1800 ./ T))], # see prev line
              [[:OD, :H2], [:HDO, :H], :(2.8e-12*exp(-1800 ./ T))], # Yung88: rate same as H-ana (assumed)
              [[:OD, :H2], [:H2O, :D], :(0)], # Yung88 (assumed)
-             ### [[:OD, :HD], [:HDO, :D], :(???)],
-             ### [[:OD, :HD], [:D2O, :H], :(???)],
+             ### [[:OD, :HD], [:HDO, :D], :(???)],  # possibilities for which I 
+             ### [[:OD, :HD], [:D2O, :H], :(???)],  # can't find a rate...?
 
-             # recombination of H
-             #[[:H, :H, :CO2], [:H2, :CO2],:(1.6e-32*(298 ./ T)^2.27)], # keep this off unless next 2 off
+             # recombination of H. Use EITHER the first line OR the 2nd and 3rd.
+             #[[:H, :H, :CO2], [:H2, :CO2],:(1.6e-32*(298 ./ T)^2.27)],
              [[:H, :H, :M], [:H2, :M], :(1.6e-32*(298 ./ T)^2.27)], # general version of H+H+CO2, rate: Justin Deighan.
              [[:H, :D, :M], [:HD, :M], :(1.6e-32*(298 ./ T)^2.27)], # Yung88: rate same as H-ana.
 
@@ -1215,20 +1234,20 @@ reactionnet = [   #Photodissociation
              [[:D, :HO2], [:OH, :OD], :(0.71*7.2e-11)], # Yung88: rate 0.71*H-ana (assumed). verified Yung89 3/28/18 (base: 7.05, minor disagreement)
              [[:D, :HO2], [:HD, :O2], :(0.71*0.5*6.9e-12)], # Yung88: rate 0.71*H-ana (assumed). verified Yung89 3/28/18 (base 7.29, minor disagreement)
              [[:D, :HO2], [:HDO, :O1D], :(0.71*1.6e-12)], # Yung88: rate 0.71*H-ana (assumed). Changed to O1D to match what Mike put in 3rd line from top of this section.
-             [[:H, :DO2], [:HO2, :D], :(1e-10/(0.54*exp(890 ./ T)))], # Yung88  (assumed) - turn off for Case 2
+             [[:H, :DO2], [:HO2, :D], :(1e-10/(0.54*exp(890 ./ T)))], # Yung88 (assumed) - turn off for Case 2
              [[:D, :HO2], [:DO2, :H], :(1.0e-10)], # Yung88. verified Yung89 3/28/18 - turn off for Case 2
 
              ## H + H2O2. deuterated analogues added 3/29
              [[:H, :H2O2], [:HO2, :H2],:(2.81e-12*exp(-1890 ./ T))], # verified NIST 4/3/18. Only valid for T>300K. No experiment for lower.
-             [[:H, :HDO2], [:DO2,:H2], :(0)], # Cazaux2010: BR = 0
-             [[:H, :HDO2], [:HO2,:HD], :(0)], # Cazaux2010: BR = 0
-             [[:D, :H2O2], [:DO2,:H2], :(0)], # Cazaux2010: BR = 0
-             [[:D, :H2O2], [:HO2,:HD], :(0)], # Cazaux2010: BR = 0
+             # [[:H, :HDO2], [:DO2, :H2], :(0)], # Cazaux2010: branching ratio = 0
+             # [[:H, :HDO2], [:HO2, :HD], :(0)], # Cazaux2010: BR = 0
+             # [[:D, :H2O2], [:DO2, :H2], :(0)], # Cazaux2010: BR = 0
+             # [[:D, :H2O2], [:HO2, :HD], :(0)], # Cazaux2010: BR = 0
              [[:H, :H2O2], [:H2O, :OH],:(1.7e-11*exp(-1800 ./ T))], # verified NIST 4/3/18
-             [[:H, :HDO2], [:HDO,:OH], :(0.5*1.16E-11*exp(-2110 ./ T))], # Cazaux2010: BR = 0.5. Rate for D + H2O2, valid 294<T<464K, NIST, 4/3/18
-             [[:H, :HDO2], [:H2O,:OD], :(0.5*1.16E-11*exp(-2110 ./ T))], # see previous line
-             [[:D, :H2O2], [:HDO,:OH], :(0.5*1.16E-11*exp(-2110 ./ T))], # see previous line
-             [[:D, :H2O2], [:H2O,:OD], :(0.5*1.16E-11*exp(-2110 ./ T))], # see previous line
+             [[:H, :HDO2], [:HDO, :OH], :(0.5*1.16E-11*exp(-2110 ./ T))], # Cazaux2010: BR = 0.5. Rate for D + H2O2, valid 294<T<464K, NIST, 4/3/18
+             [[:H, :HDO2], [:H2O, :OD], :(0.5*1.16E-11*exp(-2110 ./ T))], # see previous line
+             [[:D, :H2O2], [:HDO, :OH], :(0.5*1.16E-11*exp(-2110 ./ T))], # see previous line
+             [[:D, :H2O2], [:H2O, :OD], :(0.5*1.16E-11*exp(-2110 ./ T))], # see previous line
              [[:D, :HDO2], [:OD, :HDO], :(0.5*1.16E-11*exp(-2110 ./ T))], # added 4/3 with assumed rate from other rxns
              [[:D, :HDO2], [:OH, :D2O], :(0.5*1.16E-11*exp(-2110/T))], # sourced from Cazaux et al
 
@@ -1297,7 +1316,7 @@ reactionnet = [   #Photodissociation
 
              # CO2+ attack on molecular hydrogen
              [[:CO2pl, :H2], [:CO2, :H, :H], :(8.7e-10)], # from Kras 2010 / Scott 1997
-             [[:CO2pl, :HD], [:CO2pl, :H, :D], :((2/5)*8.7e-10)],
+             [[:CO2pl, :HD], [:CO2pl, :H, :D], :((2/5)*8.7e-10)]
              ];
 
 ################################################################################
@@ -1322,101 +1341,76 @@ n_current[:HD] = n_current[:H2] * DH
 n_current[:DOCO] = n_current[:HOCO] * DH
 
 # add the new Jrates --the values will get populated automatically =============
-n_current[:JHDOtoHpOD] = 0.0 * ones(length(alt))
-n_current[:JHDOtoDpOH] = 0.0 * ones(length(alt))
-n_current[:JHDO2toOHpOD] = 0.0 * ones(length(alt))
-n_current[:JHDOtoHDpO1D] = 0.0 * ones(length(alt)) 
-n_current[:JHDOtoHpDpO] = 0.0 * ones(length(alt))
-n_current[:JODtoOpD] = 0.0 * ones(length(alt))
-n_current[:JHDtoHpD] = 0.0 * ones(length(alt))
-n_current[:JDO2toODpO] = 0.0 * ones(length(alt))
-n_current[:JHDO2toDO2pH] = 0.0 * ones(length(alt))
-n_current[:JHDO2toHO2pD] = 0.0 * ones(length(alt))
-n_current[:JHDO2toHDOpO1D] =  0.0 * ones(length(alt))
-n_current[:JODtoO1DpD]  =  0.0 * ones(length(alt))
+n_current[:JHDOtoHpOD] = zeros(length(alt))
+n_current[:JHDOtoDpOH] = zeros(length(alt))
+n_current[:JHDO2toOHpOD] = zeros(length(alt))
+n_current[:JHDOtoHDpO1D] = zeros(length(alt)) 
+n_current[:JHDOtoHpDpO] = zeros(length(alt))
+n_current[:JODtoOpD] = zeros(length(alt))
+n_current[:JHDtoHpD] = zeros(length(alt))
+n_current[:JDO2toODpO] = zeros(length(alt))
+n_current[:JHDO2toDO2pH] = zeros(length(alt))
+n_current[:JHDO2toHO2pD] = zeros(length(alt))
+n_current[:JHDO2toHDOpO1D] =  zeros(length(alt))
+n_current[:JODtoO1DpD]  =  zeros(length(alt))
 
 ################################################################################
 ####################### TEMPERATURE/PRESSURE PROFILES ##########################
 ################################################################################
 
-function Tspl(z::Float64, lapserate=-1.4e-5, Tsurf=211, ztropo=50e5, zexo=200e5, Texo=300)
-    #=
-    DO NOT MODIFY! If you want to change the temperature, define a
-    new function or select different arguments and pass to Temp(z).
-    spline interpolation between adaiabatic lapse rate in lower atm
-    (Zahnle 2008) and isothermal exosphere (300K, typical?)  Too hot
-    at 125km?? should be close to 170 (Krasnopolsky)
-
-    z: an altitude in cm.
-    returns: temperature in K at the requested altitude.
-
-    sample output:
-    Tspl(0.0) = 211.0
-    Tspl(10e5) = 197.0
-    Tspl(125e5) = 194.25
-    =#
-    if z < ztropo
-        return Tsurf + lapserate*z
-    end
-    if z > zexo
-        return Texo
-    end
-    Ttropo = Tsurf+lapserate*ztropo
-    Tret = ((z - zexo)^2 * (Ttropo*(2*z + zexo - 3*ztropo) +
-            lapserate*(z - ztropo)*(zexo - ztropo))
-            - Texo*(z - ztropo)^2*(2*z - 3*zexo + ztropo))/(zexo - ztropo)^3
-    # Mike got the above expression from Mathematica; seems to do what it is
-    # asked to, matching the temp and lapse rate at the tropopause and the temp
-    # with no derivative at the exobase.
-end
-
-function Tpiecewise(z::Float64, Tsurf, Ttropo, Tinf, lapserate=-1.4e-5, ztropo=90e5)
-    #=
-    DO NOT MODIFY! If you want to change the temperature, define a
+function Tpiecewise(z::Float64, Tsurf, Ttropo, Texo, E="")
+    #= DO NOT MODIFY! If you want to change the temperature, define a
     new function or select different arguments and pass to Temp(z)
 
     a piecewise function for temperature as a function of altitude,
-    using Krasnopolsky's 2010 temperatures for altitudes
-    >htropo=90km, fixed at Ttropo=125K between htropo and
-    htropo-htropowidth=60km, and rising at a constant lapse rate
-    (1.4K/km) below.
+    using Krasnopolsky's 2010 "half-Gaussian" function for temperatures 
+    altitudes above the tropopause, with a constant lapse rate (1.4K/km) 
+    in the lower atmosphere. The tropopause width is allowed to vary
+    in certain cases.
 
-    z: an altitude in cm.
-    returns: temperature in K at the requested altitude.
+    z: altitude above surface in cm
+    Tsurf: Surface temperature in K
+    Tropo: tropopause tempearture
+    Texo: exobase temperature
+    E: type of experiment, used for determining if mesopause width will vary 
     =#
-    # allow varying troposphere width
-    ztropowidth = ztropo - (1/lapserate)*(Ttropo-Tsurf)
-    if ztropowidth < 0   # in case a profile is nonphysical, let lapse rate vary
-        ztropowidth = 30e5
-        m = (ztropo/1e5 - ztropowidth/1e5) / (Ttropo - Tsurf)
-        lapserate = (1/m)*1e-5
+    
+    lapserate = -1.4e-5 # lapse rate in K/cm
+    ztropo = 120e5  # height of the tropopause top
+    
+    # set the width of tropopause. It varies unless we're only varying the 
+    # exobase temperature.
+    if (E=="tropo") || (E=="surf")
+        ztropo_bot = (Ttropo-Tsurf)/(lapserate)
+        ztropowidth = ztropo - ztropo_bot
+    else
+        ztropo_bot = (Ttropo-Tsurf)/(lapserate)
+        ztropowidth = ztropo - ztropo_bot
     end
 
-    if z >= ztropo
-        return Tinf - (Tinf - Ttropo)*exp(-((z-ztropo)^2)/(8e10*Tinf))
-    end
-    if ztropo > z >= ztropo - ztropowidth
+    if z >= ztropo  # upper atmosphere
+        return Texo - (Texo - Ttropo)*exp(-((z-ztropo)^2)/(8e10*Texo))
+    elseif ztropo > z >= ztropo - ztropowidth  # tropopause
         return Ttropo
-    end
-    if ztropo-ztropowidth > z
-        return Ttropo-lapserate*(ztropo-ztropowidth-z)
+    elseif ztropo-ztropowidth > z  # lower atmosphere
+        return Tsurf + lapserate*z
     end
 end
 
-function get_lapserate(Tsurf, Ttropo, lapserate=-1.4e-5, ztropo=90e5)
-    #=
-    Same as Tpiecewise but returns the lapse rate for logging purposes. No,
-    there isn't a better way to do this without it being a PITA, I checked. :(
-    =#
-    # allow varying troposphere width
-    ztropowidth = ztropo - (1/lapserate)*(Ttropo-Tsurf)
-    if ztropowidth < 0   # in case a profile is nonphysical, let lapse rate vary
-        ztropowidth = 30e5
-        m = (ztropo/1e5 - ztropowidth/1e5) / (Ttropo - Tsurf)
-        lapserate = (1/m)*1e-5
-    end
-    return lapserate
-end
+# function get_lapserate(Tsurf, Ttropo, lapserate=-1.4e-5, ztropo=90e5)
+#     #=
+#     Same as Tpiecewise but returns the lapse rate for logging purposes. No,
+#     there isn't a better way to do this without it being a PITA, I checked. :(
+#     =#
+#     # allow varying troposphere width
+#     ztropowidth = ztropo - (1/lapserate)*(Ttropo-Tsurf)
+#     if ztropowidth < 0   # in case a profile is nonphysical, let lapse rate vary
+#         ztropowidth = 30e5
+#         m = (ztropo/1e5 - ztropowidth/1e5) / (Ttropo - Tsurf)
+#         lapserate = (1/m)*1e-5
+#     end
+#     return lapserate
+# end
 
 function plot_temp_prof(savepath)
     #=
@@ -1425,7 +1419,8 @@ function plot_temp_prof(savepath)
     Output: 
         A single panel plot of the temperature profile
     =#
-    alt = (0:2e5:200e5)
+
+    alt = (0:2e5:zmax)
 
     fig, ax = subplots(figsize=(4,6))
     ax.set_facecolor("#ededed")
@@ -1437,11 +1432,11 @@ function plot_temp_prof(savepath)
     plot([Temp(a) for a in alt], alt/1e5)
 
     ax.set_ylabel("Altitude (km)")
-    ax.set_yticks([0, 100, 200])
-    ax.set_yticklabels([0,100,200])
+    ax.set_yticks([0, 100, zmax/1e5])
+    ax.set_yticklabels([0,100,zmax/1e5])
     ax.set_xlabel("Temperature (K)")
 
-    ax.text(Temp(200e5)*0.9, 185, L"T_{exo}")
+    ax.text(Temp(zmax)*0.9, 185, L"T_{exo}")
     ax.text(Temp(100e5)+5, 75, L"T_{tropo}")
     ax.text(Temp(0.0), 10, L"T_{surface}")
 
@@ -1451,11 +1446,11 @@ end
 #If changes to the temperature are needed, they should be made here 
 if args[1]=="temp"
     Temp(z::Float64) = Tpiecewise(z, args[2], args[3], args[4])
-    # Temp_keepSVP(z::Float64) = Tpiecewise(z, 190.0, 110.0, 200.0) # for testing temp without changing SVP.
-    lapserate_logme = get_lapserate(args[2], args[3])
+    Temp_keepSVP(z::Float64) = Tpiecewise(z, 190.0, 110.0, 200.0) # for testing temp without changing SVP.
+    # lapserate_logme = get_lapserate(args[2], args[3])
 else
     Temp(z::Float64) = Tpiecewise(z, 190.0, 110.0, 200.0)
-    lapserate_logme = get_lapserate(190.0, 110.0)
+    # lapserate_logme = get_lapserate(190.0, 110.0)
 end
 
 plot_temp_prof(FNext)
@@ -1473,19 +1468,27 @@ Psat(T::Float64) = ((133.3*1e-6)/(boltzmannK * T))*(10^(-2445.5646/T + 8.2312*lo
 function LHDO(T)
     #=
     Latent heat of vaporization of HDO as a function of temperature in K.
-    This analytical function was determined by fitting data from
-    https://pubs.acs.org/doi/pdf/10.1021/cr60292a004 (Jancso 1974, page 734)
-    and extrapolating. It is probably not accurate outside the range of the data,
-    which was 0-100, but it shouldn't be too far off.
+    Using Jancso 1974 (https://pubs.acs.org/doi/pdf/10.1021/cr60292a004)
+    and Jacobson's Fundamentals of Atmospheric Modeling.
 
-    The data was in cal/mol versus Celsius. We convert to kJ/mol below.
-    Fit was done in Python in a separate script. parameters below are the output
-    from said fit.
+    How I determined this analytical function:
+    1. Used Jancso 1974, pg. 734, to get data on the difference of latent heat 
+       of evaporation (L_e) for HDO and H2O from 0 to 100°C. 
+    2. Used equation 2.54 in Jacobson to get analytical values for L_e of H2O in 
+       the same range (0-100°C)
+    3. Combined the L_e of H2O with data from Jancso 1974 to get L_HDO.
+    4. Noting that L_e expression is roughly linear, fit a line to the L_HDO
+       values and extrapolated to Mars temperatures of interest (100 to 350K)
+
+    The data from Jancso 1974 are in cal/mol vs Celsius. We convert to kJ/mol 
+    below. 1 kJ = 239 cal => 0.004184 kJ/1 cal. Fit was done in Python in a 
+    separate script. parameters below are the output from said fit.
     =#
-    a = -0.02806171415983739
-    b = 89.51209910268079
-    c = 11918.608639939 # this is cal/mol
-    return (a*(T-b)^2 + c) / 239 # returns in kJ/mol
+      
+    M = -11.368481383727467  
+    a = -2.1942156994200985
+    B = 11007.47142671782 # this is cal/mol
+    return (M*(T-a) +B) * (0.004184 / 1) # returns in kJ/mol
 end
 
 function Psat_HDO(T)
@@ -1506,7 +1509,7 @@ function Psat_HDO(T)
         Pressure in #/cm^3
     =#
     R_HDO = 434.8 # J/kgK
-    L_HDO = LHDO(T) * 1000 / 0.019 # kJ/mol * J/kJ * mol / kg = J / kg
+    L_HDO = LHDO(T) * (1000/1) *(1/0.019) # kJ/mol * J/kJ * mol / (kg of HDO)= J / kg
     T0 = 373.85 # boiling temp for liquid HDO
     P0 = 101325 # standard pressure
     Psat_pascals = P0*exp(-(L_HDO/R_HDO)*(1/T - 1/T0))
@@ -1516,20 +1519,29 @@ function Psat_HDO(T)
 end
 
 # H2O Water Profile ============================================================
-H2Osat = map(x->Psat(x), map(Temp, alt)) # array in #/cm^3 by altitude 
+# 
+if fix_SVP==true
+    H2Osat = map(x->Psat(x), map(Temp_keepSVP, alt)) # for holding SVP fixed
+else
+    H2Osat = map(x->Psat(x), map(Temp, alt)) # array in #/cm^3 by altitude
+end
 H2Osatfrac = H2Osat./map(z->n_tot(n_current, z), alt)  # get SVP as fraction of total atmo
 # set H2O SVP fraction to minimum for all alts above first time min is reached
 H2Oinitfrac = H2Osatfrac[1:something(findfirst(isequal(minimum(H2Osatfrac)), H2Osatfrac), 0)]
 H2Oinitfrac = [H2Oinitfrac;   # ensures no supersaturation
                fill(minimum(H2Osatfrac), length(alt)-2-length(H2Oinitfrac))]
 
-# make profile constant in the lower atmosphere (well-mixed)
+# make profile constant in the lower atmosphere (well-mixed).
+# when doing water experiments, the temperature profile is such that the minimum
+# in the SVP curve occurs at about 55 km alt. This was found by manual tweaking.
+# thus we need to only set the lower atmo mixing ratio below that point, or 
+# there will be a little spike in the water profile.
 if args[1] == "water"
-    H2Oinitfrac[findall(x->x<60e5, alt)] .= args[2]
+    H2Oinitfrac[findall(x->x<50e5, alt)] .= args[2]
     MR = args[2] # mixing ratio 
-else
-    H2Oinitfrac[findall(x->x<30e5, alt)] .= 8e-4 # TODO: updated mean water to gve 10 pr μm
-    MR = 8e-4
+else  # i believe 30 km is supposed to be approximately the hygropause.
+    H2Oinitfrac[findall(x->x<30e5, alt)] .= 8.1e-4 # 10 pr μm
+    MR = 8.1e-4
 end
 
 for i in [1:length(H2Oinitfrac);]
@@ -1537,7 +1549,12 @@ for i in [1:length(H2Oinitfrac);]
 end
 
 # HDO water profile ============================================================
-HDOsat = map(x->Psat_HDO(x), map(Temp, alt))
+if fix_SVP==true
+    HDOsat = map(x->Psat_HDO(x), map(Temp_keepSVP, alt))  # for holding SVP fixed
+else
+    HDOsat = map(x->Psat_HDO(x), map(Temp, alt))
+end
+HDOsatfrac = HDOsat./map(z->n_tot(n_current, z), alt)
 # use D/H ratio to set population of HDO
 HDOinitfrac = H2Oinitfrac * DH  # initial profile for HDO
 
@@ -1589,10 +1606,15 @@ semilogx(H2Oinitfrac, alt[2:end-1]/1e5, color="cornflowerblue", linewidth=3,
          label=L"H$_2$O")
 semilogx(HDOinitfrac, alt[2:end-1]/1e5, color="cornflowerblue", linestyle="--", 
          linewidth=3, label="HDO")
+semilogx(H2Osatfrac, alt[1:end]/1e5, color="black", alpha=0.5, linewidth=3, 
+         label=L"H$_2$O saturation")
+semilogx(HDOsatfrac, alt[1:end]/1e5, color="black", alpha=0.5, linestyle="--", 
+         linewidth=3, label="HDO saturation")
 xlabel("Mixing ratio", fontsize=18)
 ylabel("Altitude [km]", fontsize=18)
 title(L"H$_2$O and HDO model profiles", fontsize=20)
 ax.tick_params("both",labelsize=16)
+legend()
 savefig(experimentdir*FNext*"/water_profile_rawMR.png")
 
 ################################################################################
@@ -1605,11 +1627,11 @@ D_effusion_velocity = effusion_velocity(Temp(zmax), 2.0)
 HD_effusion_velocity = effusion_velocity(Temp(zmax), 3.0)
 
 #=
-boundary conditions for each species (mostly from Nair 1994, Yung 1988). For 
-most species, default boundary condition is zero (f)lux at top and bottom. 
-Atomic/molecular hydrogen and deuterated analogues have a nonzero effusion 
-(v)elocity at the upper layer of the atmosphere. Some species have a (n)umber 
-density boundary condition.
+    boundary conditions for each species (mostly from Nair 1994, Yung 1988). For 
+    most species, default boundary condition is zero (f)lux at top and bottom. 
+    Atomic/molecular hydrogen and deuterated analogues have a nonzero effusion 
+    (v)elocity at the upper layer of the atmosphere. Some species have a (n)umber 
+    density boundary condition.
 =#
 
 if args[1] == "Oflux"
@@ -1779,7 +1801,7 @@ o2_130_190 = "130-190.cf4"
 o2_190_280 = "190-280.cf4"
 o2_280_500 = "280-500.cf4"
 h2file = "binnedH2.csv"
-hdfile = "binnedH2.csv" # TODO: change this to HD file if xsects ever become real
+hdfile = "binnedH2.csv" # TODO: change this to HD file if xsects ever exist
 ohfile = "binnedOH.csv"
 oho1dfile = "binnedOHo1D.csv"
 odfile = "OD.csv"
@@ -2295,6 +2317,11 @@ savefig(experimentdir*FNext*"/initial_water_number.png")
 # do the convergence ===========================================================
 # initialize whole atmosphere figure 
 fig, ax = subplots(figsize=(10,6))
+ax.set_facecolor("#ededed")
+ax.grid(color="white")
+for side in ["top", "bottom", "left", "right"]
+    ax.spines[side].set_visible(false)
+end
 
 [timeupdate(t) for t in [10.0^(1.0*i) for i in -3:14]]
 for i in 1:100
@@ -2327,25 +2354,26 @@ xsect_dict = Dict("CO2"=>[co2file, co2exfile],
 
 # Log temperature and water parameters =========================================
 if args[1]=="temp"
-    input_string = "T_0=$(args[2]), T_tropo=$(args[3]), T_exo=$(args[4]) \n
-                    water init=8e-4\nDH=5.5 \nOflux=1.2e8\n
-                    lapse rate=$(lapserate_logme)\n"
+    input_string = "T_0=$(args[2]), T_tropo=$(args[3]), T_exo=$(args[4])" * 
+                   "\nwater init=8e-4\nDH=5.5 \nOflux=1.2e8" #*
+                   #"\nlapse rate=$(lapserate_logme)\n"
 elseif args[1]=="water"
-    input_string = "T_0=190.0, T_tropo=110.0, T_exo=200.0\n
-                    water init=$(args[2])\nDH=5.5\nOflux=1.2e8\n
-                    lapse rate=$(lapserate_logme)\n"
+    input_string = "T_0=190.0, T_tropo=110.0, T_exo=200.0\n" *
+                   "water init=$(args[2])\nDH=5.5\nOflux=1.2e8\n" #*
+                   #"lapse rate=$(lapserate_logme)\n"
 elseif args[1]=="dh"
-    input_string = "T_0=190.0, T_tropo=110.0, T_exo=200.0\nwater=8e-4\n 
-                    DH=$(args[2]) \nOflux=1.2e8\nlapse rate=$(lapserate_logme)\n"
+    input_string = "T_0=190.0, T_tropo=110.0, T_exo=200.0\nwater=8e-4\n" *
+                   "DH=$(args[2]) \nOflux=1.2e8\n"#lapse rate=$(lapserate_logme)\n"
 elseif args[1]=="Oflux"
-    input_string = "T_0=190.0, T_tropo=110.0, T_exo=200.0 \nwater=8e-4\n 
-                    DH=5.5\nOflux=$(Of)\nlapse rate=$(lapserate_logme)\n"
+    input_string = "T_0=190.0, T_tropo=110.0, T_exo=200.0 \nwater=8e-4" *
+                   "\nDH=5.5\nOflux=$(Of)\n"#lapse rate=$(lapserate_logme)\n"
 end
 
 # Write the log ================================================================
 f = open(experimentdir*FNext*"/convergence_"*FNext*".txt", "w")
 write(f, "Finished convergence for $(args[1]) experiment with control parameters: \n")
 write(f, input_string)
+write(f, "\nSVP fixed: $(fix_SVP)\n")
 write(f, "\nCROSS SECTIONS: \n")
 for k in keys(xsect_dict)  # cross sections
     write(f, k*": "*join(xsect_dict[k], ", ")*"\n")
@@ -2359,9 +2387,11 @@ for k2 in keys(speciesbclist)
     write(f, string(k2)*": "*bcstring*"\n")
 end
 
-#write(f, "NOTE: this simulation was run with SOLAR MAX values")
-# write(f, "NOTE: This simulation converged with SVP for mean temperatures, but with 
+#write(f, "note: this simulation was run with SOLAR MAX values")
+# write(f, "note: This simulation converged with SVP for mean temperatures, but with 
 #           varying temperature profile")
 close(f)
 
 println("ALERT: Finished convergence")
+println()
+
