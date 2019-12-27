@@ -9,6 +9,7 @@
 # Eryn Cangi
 # July 2019
 # Currently tested for Python: 3.7
+# NOTE: Currently porting to calc_f_converged so this will be deprecated.
 ################################################################################
 import matplotlib.pyplot as plt
 import pandas as pd

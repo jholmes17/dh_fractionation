@@ -8,8 +8,6 @@
 # Eryn Cangi
 # May 2019
 # Currently tested for Julia: 0.7
-# TODO: This has not been updated for the improved temperature function that
-# maintains a constant lapse rate and adjusts mesosphere height. 7/2/19
 ################################################################################
 
 using PyCall
@@ -69,39 +67,44 @@ function plot_all_T_profiles()
     Plots a 6-panel figure of temperature profiles, the ones where there is 
     some perturbance from mean.
     =#
-    profile_array = [[143, 110, 200], [190, 83, 200], [190, 110, 150], 
-    				 [238, 110, 200], [190, 138, 200], [190, 110, 250]]
+    profile_array = [[162, 108, 205], [216, 81, 205], [216, 108, 158], 
+    				 [270, 108, 205], [216, 135, 205], [216, 108, 264]]
 
-    titles = [L"$\overline{T}_{surf}-25$%", L"$\overline{T}_{tropo}-25$%", 
-              L"$\overline{T}_{exo}-25$%", L"$\overline{T}_{surf}+25$%", 
-              L"$\overline{T}_{tropo}+25$%", L"$\overline{T}_{exo}+25$%"]
+    titles = [L"$T_{surf}=0.75\overline{T}_{surf}$", L"$T_{tropo}=0.75\overline{T}_{tropo}$", 
+              L"$T_{exo}=0.75\overline{T}_{exo}$", L"$T_{surf}=1.25\overline{T}_{surf}$", 
+              L"$T_{tropo}=1.25\overline{T}_{tropo}$", L"$T_{exo}=1.25\overline{T}_{exo}$"]
 
     rcparams = PyCall.PyDict(matplotlib."rcParams")
-    rcparams["font.sans-serif"] = ["Laksaman"]
+    rcparams["font.sans-serif"] = ["Louis George Caf?"]
     rcparams["font.monospace"] = ["FreeMono"]
     rcparams["font.size"] = 22
     rcparams["axes.labelsize"]= 24
     rcparams["xtick.labelsize"] = 22
     rcparams["ytick.labelsize"] = 22
 
-    alt = (0:2e5:200e5)
+    alt = (0:2e5:250e5)
 
     fig, ax = subplots(2, 3, sharex=true, sharey=true, figsize=(10,8))
-    subplots_adjust(wspace=0.05, hspace=0.4)
+    subplots_adjust(wspace=0.05, hspace=0.3)
 
     i = 1
     j = 1
+    modcol = "navy"
+    meancol = "xkcd:cerulean blue"
     for (el, tit) in zip(profile_array, titles)
-        ax[j, i].plot([Tpiecewise(a, el[1], el[2], el[3]) for a in alt], alt/1e5)
-        ax[j, i].set_title(tit)
+        ax[j, i].plot([Tpiecewise(a, 216.0, 108.0, 205.0) for a in alt], 
+                      alt/1e5, color=meancol, linestyle="--", label="Global mean")
+        ax[j, i].plot([Tpiecewise(a, el[1], el[2], el[3]) for a in alt], 
+                       alt/1e5, color=modcol, label="Modified") 
+        ax[j, i].set_title(tit, fontsize=20)
         ax[j, i].set_xticks([100, 150, 200, 250])
         ax[j, i].tick_params(axis="x", labelbottom=false)
         better_plot_bg(ax[j, i])
 
         if i==1
             ax[j, i].set_ylabel("Altitude (km)")
-            ax[j, i].set_yticks([0, 100, 200])
-            ax[j, i].set_yticklabels([0,100,200])
+            ax[j, i].set_yticks([0, 50, 100, 150, 200, 250])
+            ax[j, i].set_yticklabels([0,50,100,150,200,250])
             if j==2
                 ax[j, i].set_xlabel("Temperature (K)")
                 ax[j, i].tick_params(axis="x", labelbottom=true)
@@ -117,11 +120,15 @@ function plot_all_T_profiles()
         end
     end
 
-    ax[1, 1].text(200, 185, L"T_{exo}")
-    ax[1, 1].text(115, 75, L"T_{tropo}")
-    ax[1, 1].text(155, 10, L"T_{surf}")
+    ax[1, 1].text(213, 220, L"T_{exo}")
+    ax[1, 1].text(115, 80, L"T_{tropo}")
+    ax[1, 1].text(80, -2, L"T_{surf-}")
+    ax[1, 1].plot(205, 250, marker="o", color=modcol)
+    ax[1, 1].plot(108, 80, marker="o", color=modcol)
+    ax[1, 1].plot(162, 0, marker="o", color=modcol)
+    legend(bbox_to_anchor=(1.05, -0.05))
 
-    savefig("../Results/VarWaterTemp/Plots/temp_profiles.png")
+    savefig("../Results/ALL STUDY PLOTS/temp_profiles.png", bbox_inches="tight")
 end
 
 function plot_one_profile(tprof, titletext, savepath)
@@ -142,25 +149,25 @@ function plot_one_profile(tprof, titletext, savepath)
     rcParams["xtick.labelsize"] = 22
     rcParams["ytick.labelsize"] = 22
 
-    alt = (0:2e5:200e5)
+    alt = (0:2e5:250e5)
 
     fig, ax = subplots(figsize=(4,6))
     better_plot_bg(ax)
-    plot([Tpiecewise(a, tprof[1], tprof[2], tprof[3]) for a in alt], alt/1e5)
+    plot([Tpiecewise(a, tprof[1], tprof[2], tprof[3]) for a in alt], alt/1e5, color="xkcd:cerulean blue")
     title(titletext)
 
     ax.set_ylabel("Altitude (km)")
-    ax.set_yticks([0, 100, 200])
-    ax.set_yticklabels([0, 100, 200])
+    ax.set_xticks([100,125,150,175,200,225  ])
+    ax.set_yticks([0, 50, 100, 150, 200, 250])
+    ax.set_yticklabels([0,50,100,150,200,250])
     ax.set_xlabel("Temperature (K)")
 
-
-    ax.text(tprof[3]-30, 185, L"T_{exo}")
-    ax.text(115, 75, L"T_{tropo}")
-    ax.text(185, 10, L"T_{surf}")
+    ax.text(tprof[3]-25, 230, L"\overline{T}_{exo}")
+    ax.text(110, 85, L"\overline{T}_{tropo}")
+    ax.text(175, 0, L"\overline{T}_{surf}")
 
     savefig(savepath*"/temp_profile_"*titletext*".png", bbox_inches="tight")
 end
 
-plot_all_T_profiles()
-plot_one_profile([190, 110, 200], "Mean", "../Results/VarWaterTemp/Plots")
+# plot_all_T_profiles()
+plot_one_profile([216, 108, 205], "Global mean temperature", "../Results/ALL STUDY PLOTS/")

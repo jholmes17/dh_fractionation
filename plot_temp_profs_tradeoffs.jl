@@ -133,49 +133,49 @@ function make_temp_3panel(A)
     ax[1].set_xticks(collect(110:20:270))
     ax[1].set_xticklabels(collect(110:20:270))
     ax[1].set_ylabel("Altitude (km)")
-    ax[1].set_title(L"Varying T$_{surface}$")
+    ax[1].set_title(L"Varying T$_{surf}$")
 
     ax[2].set_xticks(collect(70:20:200))
     ax[2].set_xticklabels(collect(70:20:200))
-    ax[2].set_title(L"Varying T$_{tropopause}$")
+    ax[2].set_title(L"Varying T$_{tropo}$")
 
     ax[3].set_xticks(collect(125:25:350))
     ax[3].set_xticklabels(collect(125:25:350))
-    ax[3].set_title(L"Varying T$_{exobase}$")
+    ax[3].set_title(L"Varying T$_{exo}$")
 
     for k in range(1, length=totallen)
         csurf = get_colors(numsurf, "plasma")
         if k <= numsurf  # surface
-            Tprof = map(h->Tpiecewise(h, Ts[k], 110.0, 200.0, "surf"), alt)
+            Tprof = map(h->Tpiecewise(h, Ts[k], 108.0, 205.0, "surf"), alt)
             ax[1].plot(Tprof, alt./1e5, color=csurf[k, :])
         end
         
         csurf = get_colors(numtropo, "plasma")
         if numsurf+1 <= k <= numsurf+numtropo  # mesosphere
-            Tprof = map(h->Tpiecewise(h, 190.0, Tt[k-numsurf], 200.0, "tropo"), alt)
+            Tprof = map(h->Tpiecewise(h, 216.0, Tt[k-numsurf], 205.0, "tropo"), alt)
             ax[2].plot(Tprof, alt./1e5, color=csurf[k-10, :])
         end
         
         csurf = get_colors(numexo, "plasma")
         if numsurf+numtropo+1 <= k  # exobase
-            Tprof = map(h->Tpiecewise(h, 190.0, 110.0, Te[k-(numsurf+numtropo)], "exo"), alt)
+            Tprof = map(h->Tpiecewise(h, 216.0, 108.0, Te[k-(numsurf+numtropo)], "exo"), alt)
             ax[3].plot(Tprof, alt./1e5, color=csurf[k-(numsurf+numtropo), :])
         end
     end
-    savefig("../Results/TradeoffPlots/Tradeoffs - v4/alltemps.png", bbox_inches="tight")
+    savefig("../Results/ALL STUDY PLOTS/tradeoff_temp_profiles.png", bbox_inches="tight")
 end
 
 rcParams = PyCall.PyDict(matplotlib."rcParams")
 rcParams["font.sans-serif"] = ["Louis George Caf?"]
 rcParams["font.monospace"] = ["FreeMono"]
-rcParams["font.size"] = 22
-rcParams["axes.labelsize"]= 24
-rcParams["xtick.labelsize"] = 22
-rcParams["ytick.labelsize"] = 22
+rcParams["font.size"] = 18
+rcParams["axes.labelsize"]= 20
+rcParams["xtick.labelsize"] = 18
+rcParams["ytick.labelsize"] = 18
 
 
 # =============================================================================
 
-make_temp_3panel(200)
+# make_temp_3panel(200)
 
-# make_temp_3panel(250)
+make_temp_3panel(250)

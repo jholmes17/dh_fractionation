@@ -1316,45 +1316,89 @@ function Tspl(z::Float64, lapserate=-1.4e-5, Tsurf=211, ztropo=50e5, zexo=200e5,
     # with no derivative at the exobase.
 end
 
-function Tpiecewise(z::Float64, Tsurf, Ttropo, Tinf, lapserate=-1.4e-5, ztropo=90e5)
-    #=
-    DO NOT MODIFY! If you want to change the temperature, define a
+function Tpiecewise(z::Float64, Tsurf, Ttropo, Texo, E="")
+    #= DO NOT MODIFY! If you want to change the temperature, define a
     new function or select different arguments and pass to Temp(z)
 
     a piecewise function for temperature as a function of altitude,
-    using Krasnopolsky's 2010 temperatures for altitudes
-    >htropo=90km, fixed at Ttropo=125K between htropo and
-    htropo-htropowidth=60km, and rising at a constant lapse rate
-    (1.4K/km) below.
+    using Krasnopolsky's 2010 "half-Gaussian" function for temperatures 
+    altitudes above the tropopause, with a constant lapse rate (1.4K/km) 
+    in the lower atmosphere. The tropopause width is allowed to vary
+    in certain cases.
 
-    z: an altitude in cm.
-    returns: temperature in K at the requested altitude.
+    z: altitude above surface in cm
+    Tsurf: Surface temperature in K
+    Tropo: tropopause tempearture
+    Texo: exobase temperature
+    E: type of experiment, used for determining if mesopause width will vary 
     =#
-    # allow varying troposphere width
-    ztropowidth = ztropo - (1/lapserate)*(Ttropo-Tsurf)
-    if ztropowidth < 0   # in case a profile is nonphysical, let lapse rate vary
-        ztropowidth = 30e5
-        m = (ztropo/1e5 - ztropowidth/1e5) / (Ttropo - Tsurf)
-        lapserate = (1/m)*1e-5
+    
+    lapserate = -1.4e-5 # lapse rate in K/cm
+    ztropo = 120e5  # height of the tropopause top
+    
+    # set the width of tropopause. It varies unless we're only varying the 
+    # exobase temperature.
+    if (E=="tropo") || (E=="surf")
+        ztropo_bot = (Ttropo-Tsurf)/(lapserate)
+        ztropowidth = ztropo - ztropo_bot
+    else
+        ztropo_bot = (Ttropo-Tsurf)/(lapserate)
+        ztropowidth = ztropo - ztropo_bot
     end
 
-    if z >= ztropo
-        return Tinf - (Tinf - Ttropo)*exp(-((z-ztropo)^2)/(8e10*Tinf))
-    end
-    if ztropo > z >= ztropo - ztropowidth
+    if z >= ztropo  # upper atmosphere
+        return Texo - (Texo - Ttropo)*exp(-((z-ztropo)^2)/(8e10*Texo))
+    elseif ztropo > z >= ztropo - ztropowidth  # tropopause
         return Ttropo
-    end
-    if ztropo-ztropowidth > z
-        return Ttropo-lapserate*(ztropo-ztropowidth-z)
+    elseif ztropo-ztropowidth > z  # lower atmosphere
+        return Tsurf + lapserate*z
     end
 end
 
-#If changes to the temperature are needed, they should be made here
-if argarray[1]=="temp"
-    Temp(z::Float64) = Tpiecewise(z, argarray[2], argarray[3], argarray[4])
-else
-    Temp(z::Float64) = Tpiecewise(z, 192.0, 110.0, 199.0)
+function plot_temp_prof(savepath)
+    #=
+    Input:
+        savepath: where to save the temperature profile
+    Output: 
+        A single panel plot of the temperature profile
+    =#
+
+    alt = (0:2e5:zmax)
+
+    fig, ax = subplots(figsize=(4,6))
+    ax.set_facecolor("#ededed")
+    grid(zorder=0, color="white", which="both")
+    for side in ["top", "bottom", "left", "right"]
+        ax.spines[side].set_visible(false)
+    end
+
+    plot([Temp(a) for a in alt], alt/1e5)
+
+    ax.set_ylabel("Altitude (km)")
+    ax.set_yticks([0, 100, zmax/1e5])
+    ax.set_yticklabels([0,100,zmax/1e5])
+    ax.set_xlabel("Temperature (K)")
+
+    ax.text(Temp(zmax)*0.9, 185, L"T_{exo}")
+    ax.text(Temp(100e5)+5, 75, L"T_{tropo}")
+    ax.text(Temp(0.0), 10, L"T_{surface}")
+
+    savefig(experimentdir*savepath*"/temp_profile.png", bbox_inches="tight")
 end
+
+meanTs = 216.0
+meanTt = 108.0
+meanTe = 205.0
+
+#If changes to the temperature are needed, they should be made here 
+if args[1]=="temp"
+    Temp(z::Float64) = Tpiecewise(z, args[2], args[3], args[4])
+    Temp_keepSVP(z::Float64) = Tpiecewise(z, meanTs, meanTt, meanTe) # for testing temp without changing SVP.
+else # TODO: check surface temp
+    Temp(z::Float64) = Tpiecewise(z, meanTs, meanTt, meanTe)
+end
+
+plot_temp_prof(FNext)
 
 
 ################################################################################
@@ -1365,7 +1409,13 @@ end
 # 1st term is a conversion factor to convert to (#/cm^3) bceause the 2nd
 # term (from Washburn 1924) gives the value in mmHg
 Psat(T::Float64) = ((133.3*1e-6)/(boltzmannK * T))*(10^(-2445.5646/T + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 - 6.757169))
-H2Osat = map(x->Psat(x), map(Temp, alt)) # array in #/cm^3 by altitude 
+
+if fix_SVP==true
+    H2Osat = map(x->Psat(x), map(Temp_keepSVP, alt)) # for holding SVP fixed
+else
+    H2Osat = map(x->Psat(x), map(Temp, alt)) # array in #/cm^3 by altitude
+end
+
 H2Osatfrac = H2Osat./map(z->n_tot(n_current, z), alt)  # get SVP as fraction of total atmo
 # set H2O SVP fraction to minimum for all alts above first time min is reached
 H2Oinitfrac = H2Osatfrac[1:something(findfirst(isequal(minimum(H2Osatfrac)), H2Osatfrac), 0)]
@@ -1374,11 +1424,11 @@ H2Oinitfrac = [H2Oinitfrac;   # ensures no supersaturation
 
 # make profile constant in the lower atmosphere (well-mixed)
 if args[1] == "water"
-    H2Oinitfrac[findall(x->x<60e5, alt)] .= args[2]
+    H2Oinitfrac[findall(x->x<50e5, alt)] .= args[2]
     MR = args[2] # mixing ratio 
 else
-    H2Oinitfrac[findall(x->x<30e5, alt)] .= 1e-4
-    MR = 1e-4
+    H2Oinitfrac[findall(x->x<30e5, alt)] .= 8.1e-4
+    MR = 8.1e-4
 end
 
 for i in [1:length(H2Oinitfrac);]
@@ -1387,64 +1437,70 @@ end
 
 # HDO water profile ============================================================
 
-function Psat_HDO(T)
-    #=
-    Analytical expression for saturation vapor pressure of HDO in #/cm^3. The 
-    conversion from N/m^2 to #/cm^3 is divide by N*m (that is, kT) and multiply 
-    by the conversion to cm from m (1e-6). Justifications and sources are shown
-    below.
-
-    Input
-        T: a single temperature in K
-    Output:
-        Pressure in #/cm^3
-    =#
-    function VP_h2o_over_liquid(T)
-        #= 
-        this subroutine is only used to find the VP of H2O at 217°C,
-        the crossover point for HDO and H2O. The vapor pressure in hPa equation 
-        comes from Jacobson eqn 2.61. 
-        =# 
-        T0C = 273.15 # temperature 0°C but in K
-        VP_hPa = 6.112 * exp(6816*(1/T0C - 1/T) + 5.1309*log(T0C/T))
-        return VP_hPa * (100/1) *(1e-6)/(boltzmannK*T)
-    end
-    
-    # The following constants come from the equation for latent heat of 
-    # sublimation (Jacobson eqn 2.56):
-    # Ls = A + T(B + CT), valid for temps up to 273.15K. 
-    A = 2.8345e6   # J/kg
-    B = 340        # J/(kg K)
-    C = 10.46      # J/(kg K^2)
-    
-    # This is the gas constant for HDO. from R = kB/m, where m is mass of species.
-    # this equation found from Pierrehumbert's Principles of Planetary Climate.
-    R = 434.8      # J/(kg K)
-    
-    # Reference pressure P0 at temperature T0. Here, T0 used is the crossover 
-    # temperature for HDO and H2O, Jancso 1974, page 734. It's not perfect to 
-    # use the crossover temp because it would be in the regime of VP over water 
-    # rather than ice, but it's the best I can do. No other way for me to get a 
-    # known VP for HDO, as far as I know.
-    T0 = 273.15 + 217  # T0 in Kelvin
-    P0 = VP_h2o_over_liquid(T0) * (boltzmannK*T/1) * (1/1e-6) * (1/100) # in hPa
-    
-    # The equation for VP in hPa below was found by integrating Jacobson eqn 
-    # 2.63 using Jacobson eqn 2.56 for latent heat of sublimation. 
-    VP_hPa = P0 * exp((1/R)*(A*(1/T0 - 1/T) + B*log(T0/T) + C*(T0-T))) # in hPa
-    VP = VP_hPa * (100/1) *(1e-6)/(boltzmannK*T) # in #/cm^3.
-    return VP
-end
+Psat_HDO(T::Float64) = ((133.3*1e-6)/(boltzmannK * T))*(10^(-2445.5646/T + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 - 6.757169))
 
 HDOsat = map(x->Psat_HDO(x), map(Temp, alt))
 # use D/H ratio to set population of HDO
 HDOinitfrac = H2Oinitfrac * DH  # initial profile for HDO
 
-# Detached parcel - water enhancement ===========================================
+# Compute total water column in pr μm starting with mixing ratio array =========
+# H2O #/cm^3 = sum(MR * n_tot) for each alt
+H2O_per_cc = sum([MR; H2Oinitfrac] .* map(z->n_tot(n_current, z), alt[1:end-1]))
+HDO_per_cc = sum([MR*DH; HDOinitfrac] .* map(z->n_tot(n_current, z), alt[1:end-1]))
+
+# pr μm = (H2O #/cm^3) * cm * (mol/#) * (H2O g/mol) * (1 cm^3/g) * (10^4 μm/cm)
+# where the lone cm is a slice of the atmosphere of thickness dz, #/mol=6.023e23, 
+# H2O or HDO g/mol = 18 or 19, cm^3/g = 1 or 19/18 for H2O or HDO.
+# written as conversion factors for clarity.
+H2Oprum = (H2O_per_cc * dz) * (18/1) * (1/6.02e23) * (1/1) * (1e4/1)
+HDOprum = (HDO_per_cc * dz) * (19/1) * (1/6.02e23) * (19/18) * (1e4/1)
+
+# Detached parcel - water enhancement ==========================================
 # add in a detached water vapor parcel, which looks kinda like a gaussian packet
-# floating at 60km (Maltagliati 2013)
+# floating at 60km (Maltagliati 2013). Only for simulations exploring perturbation.
 parcel = 1e-6*map(x->80 .* exp(-((x-60)/12.5)^2),alt[2:end-1]/1e5)+H2Oinitfrac
 parcel_HDO = parcel * DH
+
+H2O_per_cc_boost = sum([MR; parcel] .* map(z->n_tot(n_current, z), alt[1:end-1]))
+HDO_per_cc_boost = sum([MR*DH; parcel_HDO] .* map(z->n_tot(n_current, z), alt[1:end-1]))
+
+H2Oprum_boost = (H2O_per_cc_boost * dz) * (18/1) * (1/6.02e23) * (1/1) * (1e4/1)
+HDOprum_boost = (HDO_per_cc * dz) * (19/1) * (1/6.02e23) * (19/18) * (1e4/1)
+
+# Write out water content to a file ============================================
+f = open(experimentdir*FNext*"/water_column_"*FNext*".txt", "w")
+write(f, "Total H2O col: $(H2O_per_cc*2e5)\n")
+write(f, "Total HDO col: $(HDO_per_cc*2e5)\n")
+write(f, "Total water col: $((H2O_per_cc + HDO_per_cc)*2e5)\n")
+write(f, "H2O+HDO at surface: $((H2O_per_cc[1] + HDO_per_cc[1])*2e5)\n")
+write(f, "Total H2O (pr μm): $(H2Oprum)\n")
+write(f, "Total H2O + parcel (pr μm): $(H2Oprum_boost) \n")
+write(f, "Total HDO (pr μm): $(HDOprum)\n")
+write(f, "Total HDO + parcel (pr μm): $(HDOprum_boost) \n")
+write(f, "Total H2O+HDO, no enhancement: $(H2Oprum + HDOprum)")
+close(f)
+
+# Plot the water profiles (as raw mixing ratio) ================================
+fig, ax = subplots(figsize=(6,9))
+ax.set_facecolor("#ededed")
+grid(zorder=0, color="white", which="both")
+for side in ["top", "bottom", "left", "right"]
+    ax.spines[side].set_visible(false)
+end
+semilogx(H2Oinitfrac, alt[2:end-1]/1e5, color="cornflowerblue", linewidth=3, 
+         label=L"H$_2$O")
+semilogx(HDOinitfrac, alt[2:end-1]/1e5, color="cornflowerblue", linestyle="--", 
+         linewidth=3, label="HDO")
+semilogx(H2Osatfrac, alt[1:end]/1e5, color="black", alpha=0.5, linewidth=3, 
+         label=L"H$_2$O saturation")
+semilogx(HDOsatfrac, alt[1:end]/1e5, color="black", alpha=0.5, linestyle="--", 
+         linewidth=3, label="HDO saturation")
+xlabel("Mixing ratio", fontsize=18)
+ylabel("Altitude [km]", fontsize=18)
+title(L"H$_2$O and HDO model profiles", fontsize=20)
+ax.tick_params("both",labelsize=16)
+legend()
+savefig(experimentdir*FNext*"/water_profile_rawMR.png")
 
 ################################################################################
 ############################# BOUNDARY CONDITIONS ##############################
@@ -2097,71 +2153,45 @@ xsect_dict = Dict("CO2"=>[co2file, co2exfile],
               "H2, HD"=>[h2file, hdfile],
               "OH, OD"=>[ohfile, oho1dfile, odfile])
 
-# Water stuff ==================================================================
-
-# Plot initial water profile with detatched layer ==============================
-figure(figsize=(6,8))
-semilogx(H2Oinitfrac/1e-6, alt[2:end-1]/1e5, color="blue", linewidth=5,
-         label=L"H$_2$O base")
-semilogx(parcel/1e-6, alt[2:end-1]/1e5, color="red", linewidth=2,
-         linestyle="--", label=L"enhanced H$_2$O")
-semilogx(HDOinitfrac/1e-6, alt[2:end-1]/1e5, color="navy", linewidth=5,
-         label=L"HDO base")
-semilogx(parcel_HDO/1e-6, alt[2:end-1]/1e5, color="darkred", linewidth=2,
-         linestyle="--", label=L"enhanced HDO")
-xlabel("Volume Mixing Ratio [ppm]")
-ylabel("Altitude [km]")
-title(L"H$_2$O and HDO model profiles")
-text(0.08, 59, "0.07ppm", color="darkred")
-text(5, 57, "80ppm", color="red")
-legend()
-savefig(experimentdir*FNext*"/perturbed_water_profile.png")
-show()
-
-# this computes the total water column in precipitable microns -----------------
-# n_col(molecules/cm2)/(molecules/mol)*(gm/mol)*(1cc/gm) = (cm)*(10^4μm/cm)
-# = precipitable μm
-H2Oprmicromsum = (sum(([MR; H2Oinitfrac]) .* map(z->n_tot(n_current, z), alt[1:end-1]))*dz)/6.02e23*18*1e4
-HDOprmicromsum = (sum(([MR*DH; HDOinitfrac]) .* map(z->n_tot(n_current, z), alt[1:end-1]))*dz)/6.02e23*19*1e4
-
-f = open(experimentdir*FNext*"/water_column_"*FNext*".txt", "w")
-write(f, "Total H2O col: $(sum(n_current[:H2O])*2e5)\n")
-write(f, "Total HDO col: $(sum(n_current[:HDO])*2e5)\n")
-write(f, "Total water col: $(sum(n_current[:H2O])*2e5 + sum(n_current[:HDO])*2e5)\n")
-write(f, "Water at surface: $(n_current[:H2O][1] + n_current[:H2O][1])\n")
-write(f, "H2O at surface (pr μm): $(H2Oprmicromsum)\n")
-write(f, "All H2O + detached layer: $((sum(([MR; parcel]) .* map(z->n_tot(n_current, z), alt[1:end-1]))*dz)/6.02e23*18*1e4) \n")
-write(f, "HDO at surface (pr μm): $(HDOprmicromsum)\n")
-write(f, "All HDO + detached layer: $((sum(([MR*DH; parcel_HDO]) .* map(z->n_tot(n_current, z), alt[1:end-1]))*dz)/6.02e23*19*1e4) \n")
-write(f, "Sum of H2O and HDO no detached layer: $(H2Oprmicromsum+HDOprmicromsum)")
-close(f)
-
-
-# Temperature and water parameters =============================================
-if argarray[1]=="temp"
-    temp_water_string = "T_0=$(argarray[2]), T_tropo=$(argarray[3]), 
-                         T_exo=$(argarray[4]), water init = 1e-4, DH=5.5"
-elseif argarray[1]=="water"
-    temp_water_string = "T_0=192, T_tropo=110, T_exo=199, 
-                         water init=$(argarray[2]), DH=5.5"
-elseif argarray[1] == "dh"
-    temp_water_string = "T_0=192, T_tropo=110, T_exo=199, water init=1e-4, 
-                         DH=$(argarray[2])"
+# Log temperature and water parameters =========================================
+if args[1]=="temp"
+    input_string = "T_0=$(args[2]), T_tropo=$(args[3]), T_exo=$(args[4])" * 
+                   "\nwater init=$(MR)\nDH=5.5 \nOflux=1.2e8" #*
+                   #"\nlapse rate=$(lapserate_logme)\n"
+elseif args[1]=="water"
+    input_string = "T_s=$(meanTs), T_tropo=$(meanTt), T_exo=$(meanTe)\n" *
+                   "water init=$(args[2])\nDH=5.5\nOflux=1.2e8\n" #*
+                   #"lapse rate=$(lapserate_logme)\n"
+elseif args[1]=="dh"
+    input_string = "T_s=$(meanTs), T_tropo=$(meanTt), T_exo=$(meanTe)\nwater=(MR)\n" *
+                   "DH=$(args[2]) \nOflux=1.2e8\n"#lapse rate=$(lapserate_logme)\n"
+elseif args[1]=="Oflux"
+    input_string = "T_s=$(meanTs), T_tropo=$(meanTt), T_exo=$(meanTe)\nwater=(MR)" *
+                   "\nDH=5.5\nOflux=$(Of)\n"#lapse rate=$(lapserate_logme)\n"
 end
 
 # Write the log ================================================================
-f = open(experimentdir*FNext*"/convergence_"*FNext*".txt", "w")
-write(f, "Finished simulation for $(argarray[1]) experiment with values: \n")
-write(f, temp_water_string
-for k in keys(xsect_dict)
+f = open(experimentdir*FNext*"/sim_data_"*FNext*".txt", "w")
+write(f, "Finished simulation for $(args[1]) experiment with control parameters: \n")
+write(f, input_string)
+write(f, "\nSVP fixed: $(fix_SVP)\n")
+write(f, "\nCROSS SECTIONS: \n")
+for k in keys(xsect_dict)  # cross sections
     write(f, k*": "*join(xsect_dict[k], ", ")*"\n")
-end)
+end
 # boundary conditions
+write(f, "\nBOUNDARY CONDITIONS: \n")
 write(f, "n: number density at surface, f: flux at top, v: velocity at top\n")
 for k2 in keys(speciesbclist)
     bcstring = join([join(speciesbclist[k2][1, :], "="), 
                      join(speciesbclist[k2][2, :], "=")], ", ")
     write(f, string(k2)*": "*bcstring*"\n")
 end
-# write(f, "ALERT: ran with solar max condtions") # Toggle for solar max
+
+#write(f, "note: this simulation was run with SOLAR MAX values")
+# write(f, "note: This simulation converged with SVP for mean temperatures, but with 
+#           varying temperature profile")
 close(f)
+
+println("ALERT: Finished convergence")
+println()

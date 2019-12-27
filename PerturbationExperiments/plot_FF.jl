@@ -608,8 +608,8 @@ lead = "/home/emc/GDrive-CU/"
 # calcFractionation_single(fH, fD, P, caseno)
 
 # for our experiments
-expfolder = isdefined(:ARGS) ? ARGS[1] : println("Please use command line args")
-P = lead*"Research/Results/"*expfolder
-fH = P*"/H_esc_flux_history.h5"
-fD = P*"/D_esc_flux_history.h5"
-plotFF_2panes(fH, fD, P, expfolder, true)
+# expfolder = isdefined(:ARGS) ? ARGS[1] : println("Please use command line args")
+# P = lead*"Research/Results/"*expfolder
+# fH = P*"/H_esc_flux_history.h5"
+# fD = P*"/D_esc_flux_history.h5"
+# plotFF_2panes(fH, fD, P, expfolder, true)

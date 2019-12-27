@@ -212,6 +212,16 @@ end
 end
 
 @everywhere function get_rates_and_fluxes(readfile)
+    #=
+    Input: An h5 file with a subsection called n_current that contains 1299 
+           iterations of the matrix that represents the atmospheric concentration
+           by altitude. 
+    Action: Steps through all of the iterations in the provided file and
+            calculates the reaction rates and fluxes at the top of the atmosphere
+            at that particular iteration
+    Output: subsections in the given files for fluxes and reaction rates by 
+            species, altitude, and iteration.
+    =#
     mydset = h5open(readfile,"r")
     mydata = read(mydset)
     timelength = length(mydata["n_current"]["timelist"])+1
@@ -237,7 +247,8 @@ end
 
     # doing this way makes it work if files already exist
     h5open(readfile, isfile(readfile) ? "r+" : "w") do file
-       write(file,"fluxes/flux_history",fluxhist)
+       write(file,"fluxes/flux_history", fluxhist)
+       write(file, "fluxes/species", specieslist)
        write(file,"rates/reaction_rates_history",reactionrateshist)
     end
     return

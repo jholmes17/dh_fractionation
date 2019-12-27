@@ -3,11 +3,11 @@
 # TYPE: MAIN (main script)
 # WHICH: Equilibrium and perturbation experiments
 # DESCRIPTION: does initial convergence for a photochemistry experiment of the
-# Martian atmosphere.
+# Martian atmosphere. EXTENDS GRID TO 250 KM. I hope.
 # 
 # Eryn Cangi
 # 2018-2019
-# this script should be used with converged_standarwater.h5 and called before
+# this script should be used with converged_standardwater.h5 and called before
 # run_and_plot.jl. 
 # Currently tested for Julia: 0.7
 ################################################################################
@@ -743,7 +743,7 @@ function plotatm(n_current)
         plot(n_current[sp], alt[2:end-1]/1e5, color = speciescolor[sp],
              linewidth=2, label=sp, linestyle=speciesstyle[sp], zorder=1)
     end
-    ylim(0, 200)
+    ylim(0, 250)
     xscale("log")
     xlim(1e-15, 1e18)
     xlabel(L"Species concentration (cm$^{-3}$)")
@@ -764,7 +764,8 @@ function Keddy(n_current, z)
     n_current: dictionary representing current simulation state.
     z: some altitude in cm.
     =#
-    z <= 60.e5 ? 10^6 : 2e13/sqrt(n_tot(n_current, z))
+    #z <= 60.e5 ? 10^6 : 2e13/sqrt(n_tot(n_current, z))
+    return 1.2e12 * sqrt(Tinf/n_tot(n_current, z))
 end
 
 function Keddy(z::Real, nt::Real)
@@ -775,7 +776,8 @@ function Keddy(z::Real, nt::Real)
     z: some altitude in cm.
     nt: number total of species at this altitude (I think)
     =#
-    z <= 60.e5 ? 10^6 : 2e13/sqrt(nt)
+    # z <= 60.e5 ? 10^6 : 2e13/sqrt(nt)
+    return 1.2e12 * sqrt(Tinf/nt)
 end
 
 function Dcoef(T, n::Real, species::Symbol)
@@ -796,13 +798,13 @@ end
 
 function effusion_velocity(Texo::Float64, m::Float64)
     #=
-    Returns effusion velocity for a species.
+    Returns effusion velocity for a species in cm/s
     Texo: temperature of the exobase (upper boundary) in K
     m: mass of one molecule of species in amu
     =#
     lambda = (m*mH*bigG*marsM)/(boltzmannK*Texo*1e-2*(radiusM+zmax))
-    vth = sqrt(2*boltzmannK*Texo/(m*mH))
-    v = 1e2*exp(-lambda)*vth*(lambda+1)/(2*pi^0.5)
+    vth = sqrt(2*boltzmannK*Texo/(m*mH))  # this one is in m/s
+    v = 1e2*exp(-lambda)*vth*(lambda+1)/(2*pi^0.5)  # this is in cm/s
     return v
 end
 
@@ -847,7 +849,14 @@ function update_Jrates!(n_current::Dict{Symbol, Array{Float64, 1}})
 
             # add the total extinction to solarabs:
             # multiplies air column density at all wavelengths by crosssection
-            # to get optical depth
+            # to get optical depth. This is an override of axpy! to use the 
+            # full arguments. For the equation Y' = alpha*X + Y:
+            # ARG 1: n (length of arrays in ARGS 3, 5)
+            # ARG 2: alpha, a scalar.
+            # ARG 3: X, an array of length n.
+            # ARG 4: the increment of the index values of X, maybe?
+            # ARG 5: Y, an array of length n
+            # ARG 6: increment of index values of Y, maybe?
             BLAS.axpy!(nlambda, jcolumn, crosssection[jspecies][ialt+1], 1,
                        solarabs[ialt],1)
         end
@@ -864,6 +873,8 @@ function update_Jrates!(n_current::Dict{Symbol, Array{Float64, 1}})
 
     #each species absorbs according to its cross section at each
     #altitude times the actinic flux.
+    # BLAS.dot includes an integration (sum) across wavelengths, i.e:
+    # (a·b) = aa + ab + ab + bb etc that kind of thing
     for j in Jratelist
         for ialt in [1:nalt;]
             n_current[j][ialt] = BLAS.dot(nlambda, solarabs[ialt], 1,
@@ -1010,24 +1021,21 @@ else
 end
 
 # Set up the converged file to read from and load the simulation state at init.
-readfile = scriptdir*"converged_standardwater.h5"
+readfile = scriptdir*"converged.h5"
 println("ALERT: Using file: ", readfile)
 const alt = h5read(readfile,"n_current/alt")
 n_current = get_ncurrent(readfile)
 n_alt_index=Dict([z=>clamp((i-1),1, length(alt)-2) for (i, z) in enumerate(alt)])
 
-# set SVP to be fixed or variable with temperature
-if args[1] == "temp"
-    fix_SVP = true
-    println("ALERT: SVP will be fixed to that of the mean temperature profile ")
-else
-    fix_SVP = false  # temp doesn't vary in other experiments, so false for simplicity
-end
+# set SVP to vary with temp since this is a reproduction
+fix_SVP = false
 
 # converts the strings that are numeric into numbers, needed to use in functions
 for i in 2:1:length(args)
     args[i] = parse(Float64, args[i])
 end
+
+global Tinf = args[4]
 
 # Plot styles ==================================================================
 rcParams = PyCall.PyDict(matplotlib."rcParams")
@@ -1131,7 +1139,7 @@ const Jratelist=[:JCO2ion,:JCO2toCOpO,:JCO2toCOpO1D,:JO2toOpO,:JO2toOpO1D,
                  ];
 
 # Altitude grid discretization
-  const zmin = alt[1]
+const zmin = alt[1]
 const zmax = alt[end];
 const dz = alt[2]-alt[1];
 
@@ -1182,7 +1190,7 @@ reactionnet = [   #Photodissociation
              [[:O, :O, :M], [:O2, :M], :(1.8*3.0e-33*(300 ./ T)^3.25)],
              [[:O, :O2, :N2], [:O3, :N2], :(5e-35*exp(724 ./ T))],
              [[:O, :O2, :CO2], [:O3, :CO2], :(2.5*6.0e-34*(300 ./ T)^2.4)],
-             [[:O, :O3], [:O2, :O2], :(8.0e-12*exp(-2060 ./ T))],
+             [[:O, :O3], [:O2, :O2], :(8.0e-12*exp(-2060 ./ T))],  # Sander 2011
              [[:O, :CO, :M], [:CO2, :M], :(2.2e-33*exp(-1780 ./ T))],
 
              # O1D attack
@@ -1199,7 +1207,7 @@ reactionnet = [   #Photodissociation
              [[:O1D, :HDO], [:OD, :OH], :(1.63e-10*exp(60 ./ T))], # Yung88: rate same as H-ana.
 
              # loss of H2
-             [[:H2, :O], [:OH, :H], :(6.34e-12*exp(-4000 ./ T))], # Mike's rate?
+             [[:H2, :O], [:OH, :H], :(6.34e-12*exp(-4000 ./ T))], # KIDA <-- Baulch, D. L. 2005
              [[:HD, :O], [:OH, :D], :(4.40e-12*exp(-4390 ./ T))], # NIST
              [[:HD, :O], [:OD, :H], :(1.68e-12*exp(-4400 ./ T))], # NIST
              # HD and H2 exchange
@@ -1244,12 +1252,12 @@ reactionnet = [   #Photodissociation
              # [[:D, :H2O2], [:DO2, :H2], :(0)], # Cazaux2010: BR = 0
              # [[:D, :H2O2], [:HO2, :HD], :(0)], # Cazaux2010: BR = 0
              [[:H, :H2O2], [:H2O, :OH],:(1.7e-11*exp(-1800 ./ T))], # verified NIST 4/3/18
-             [[:H, :HDO2], [:HDO, :OH], :(0.5*1.16E-11*exp(-2110 ./ T))], # Cazaux2010: BR = 0.5. Rate for D + H2O2, valid 294<T<464K, NIST, 4/3/18
-             [[:H, :HDO2], [:H2O, :OD], :(0.5*1.16E-11*exp(-2110 ./ T))], # see previous line
-             [[:D, :H2O2], [:HDO, :OH], :(0.5*1.16E-11*exp(-2110 ./ T))], # see previous line
-             [[:D, :H2O2], [:H2O, :OD], :(0.5*1.16E-11*exp(-2110 ./ T))], # see previous line
-             [[:D, :HDO2], [:OD, :HDO], :(0.5*1.16E-11*exp(-2110 ./ T))], # added 4/3 with assumed rate from other rxns
-             [[:D, :HDO2], [:OH, :D2O], :(0.5*1.16E-11*exp(-2110/T))], # sourced from Cazaux et al
+             [[:H, :HDO2], [:HDO, :OH], :(0.5*1.16e-11*exp(-2110 ./ T))], # Cazaux2010: BR = 0.5. Rate for D + H2O2, valid 294<T<464K, NIST, 4/3/18
+             [[:H, :HDO2], [:H2O, :OD], :(0.5*1.16e-11*exp(-2110 ./ T))], # see previous line
+             [[:D, :H2O2], [:HDO, :OH], :(0.5*1.16e-11*exp(-2110 ./ T))], # see previous line
+             [[:D, :H2O2], [:H2O, :OD], :(0.5*1.16e-11*exp(-2110 ./ T))], # see previous line
+             [[:D, :HDO2], [:OD, :HDO], :(0.5*1.16e-11*exp(-2110 ./ T))], # added 4/3 with assumed rate from other rxns
+             [[:D, :HDO2], [:OH, :D2O], :(0.5*1.16e-11*exp(-2110/T))], # sourced from Cazaux et al
 
              # Interconversion of odd H
              ## H + O2
@@ -1351,8 +1359,8 @@ n_current[:JHDtoHpD] = zeros(length(alt))
 n_current[:JDO2toODpO] = zeros(length(alt))
 n_current[:JHDO2toDO2pH] = zeros(length(alt))
 n_current[:JHDO2toHO2pD] = zeros(length(alt))
-n_current[:JHDO2toHDOpO1D] =  zeros(length(alt))
-n_current[:JODtoO1DpD]  =  zeros(length(alt))
+n_current[:JHDO2toHDOpO1D] = zeros(length(alt))
+n_current[:JODtoO1DpD] = zeros(length(alt))
 
 ################################################################################
 ####################### TEMPERATURE/PRESSURE PROFILES ##########################
@@ -1376,7 +1384,7 @@ function Tpiecewise(z::Float64, Tsurf, Ttropo, Texo, E="")
     =#
     
     lapserate = -1.4e-5 # lapse rate in K/cm
-    ztropo = 120e5  # height of the tropopause top
+    ztropo = 90e5  # height of the tropopause top
     
     # set the width of tropopause. It varies unless we're only varying the 
     # exobase temperature.
@@ -1389,28 +1397,13 @@ function Tpiecewise(z::Float64, Tsurf, Ttropo, Texo, E="")
     end
 
     if z >= ztropo  # upper atmosphere
-        return Texo - (Texo - Ttropo)*exp(-((z-ztropo)^2)/(8e10*Texo))
+        return Texo - (Texo - Ttropo)*exp(-((z-ztropo)^2)/(11.4e10*Texo))
     elseif ztropo > z >= ztropo - ztropowidth  # tropopause
         return Ttropo
     elseif ztropo-ztropowidth > z  # lower atmosphere
         return Tsurf + lapserate*z
     end
 end
-
-# function get_lapserate(Tsurf, Ttropo, lapserate=-1.4e-5, ztropo=90e5)
-#     #=
-#     Same as Tpiecewise but returns the lapse rate for logging purposes. No,
-#     there isn't a better way to do this without it being a PITA, I checked. :(
-#     =#
-#     # allow varying troposphere width
-#     ztropowidth = ztropo - (1/lapserate)*(Ttropo-Tsurf)
-#     if ztropowidth < 0   # in case a profile is nonphysical, let lapse rate vary
-#         ztropowidth = 30e5
-#         m = (ztropo/1e5 - ztropowidth/1e5) / (Ttropo - Tsurf)
-#         lapserate = (1/m)*1e-5
-#     end
-#     return lapserate
-# end
 
 function plot_temp_prof(savepath)
     #=
@@ -1443,14 +1436,16 @@ function plot_temp_prof(savepath)
     savefig(experimentdir*savepath*"/temp_profile.png", bbox_inches="tight")
 end
 
+meanTs = 216.0
+meanTt = 108.0
+meanTe = 205.0
+
 #If changes to the temperature are needed, they should be made here 
 if args[1]=="temp"
     Temp(z::Float64) = Tpiecewise(z, args[2], args[3], args[4])
-    Temp_keepSVP(z::Float64) = Tpiecewise(z, 190.0, 110.0, 200.0) # for testing temp without changing SVP.
-    # lapserate_logme = get_lapserate(args[2], args[3])
-else
-    Temp(z::Float64) = Tpiecewise(z, 190.0, 110.0, 200.0)
-    # lapserate_logme = get_lapserate(190.0, 110.0)
+    Temp_keepSVP(z::Float64) = Tpiecewise(z, meanTs, meanTt, meanTe) # for testing temp without changing SVP.
+else # TODO: check surface temp
+    Temp(z::Float64) = Tpiecewise(z, meanTs, meanTt, meanTe)
 end
 
 plot_temp_prof(FNext)
@@ -1465,58 +1460,9 @@ plot_temp_prof(FNext)
 # term (from Washburn 1924) gives the value in mmHg
 Psat(T::Float64) = ((133.3*1e-6)/(boltzmannK * T))*(10^(-2445.5646/T + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 - 6.757169))
 
-function LHDO(T)
-    #=
-    Latent heat of vaporization of HDO as a function of temperature in K.
-    Using Jancso 1974 (https://pubs.acs.org/doi/pdf/10.1021/cr60292a004)
-    and Jacobson's Fundamentals of Atmospheric Modeling.
-
-    How I determined this analytical function:
-    1. Used Jancso 1974, pg. 734, to get data on the difference of latent heat 
-       of evaporation (L_e) for HDO and H2O from 0 to 100°C. 
-    2. Used equation 2.54 in Jacobson to get analytical values for L_e of H2O in 
-       the same range (0-100°C)
-    3. Combined the L_e of H2O with data from Jancso 1974 to get L_HDO.
-    4. Noting that L_e expression is roughly linear, fit a line to the L_HDO
-       values and extrapolated to Mars temperatures of interest (100 to 350K)
-
-    The data from Jancso 1974 are in cal/mol vs Celsius. We convert to kJ/mol 
-    below. 1 kJ = 239 cal => 0.004184 kJ/1 cal. Fit was done in Python in a 
-    separate script. parameters below are the output from said fit.
-    =#
-      
-    M = -11.368481383727467  
-    a = -2.1942156994200985
-    B = 11007.47142671782 # this is cal/mol
-    return (M*(T-a) +B) * (0.004184 / 1) # returns in kJ/mol
-end
-
-function Psat_HDO(T)
-    #=
-    Analytical expression for saturation vapor pressure of HDO, using analytical
-    latent heat for HDO determined from fitting to data from Jancso 1974.
-    The boiling temperature for HDO (100.7°C, 373.85K) and standard pressure are
-    used as reference temp/pressure. The gas constant for HDO was calculated as
-    R_HDO = kB/m, which probably came from Pierrehumbert's text.
-
-    returns the pressure in #/cm^3. The conversion from N/m^2 to #/cm^3 is 
-    divide by N*m (that is, kT) and multiply by the conversion to cm from m 
-    (1e-6). 
-
-    Input
-        T: a single temperature in K
-    Output:
-        Pressure in #/cm^3
-    =#
-    R_HDO = 434.8 # J/kgK
-    L_HDO = LHDO(T) * (1000/1) *(1/0.019) # kJ/mol * J/kJ * mol / (kg of HDO)= J / kg
-    T0 = 373.85 # boiling temp for liquid HDO
-    P0 = 101325 # standard pressure
-    Psat_pascals = P0*exp(-(L_HDO/R_HDO)*(1/T - 1/T0))
-    # To convert to #/cm^3 from Pa:
-    # Pa = Nm^-2 (1/(Nm)) * (1e-6 m^3 / 1 cm^3)
-    return Psat_pascals*(1e-6)/(boltzmannK*T) # return in #/cm^3
-end
+# It doesn't matter to get the exact SVP of HDO because we never saturate. 
+# I also tested it, and using the one I derived vs. the one for H2O makes no difference.
+Psat_HDO(T::Float64) = ((133.3*1e-6)/(boltzmannK * T))*(10^(-2445.5646/T + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 - 6.757169))
 
 # H2O Water Profile ============================================================
 # 
@@ -1685,8 +1631,7 @@ diffparams(species) = get(Dict(:H=>[8.4, 0.597], :H2=>[2.23, 0.75],
 # override to use altitude instead of temperature
 Dcoef(z, species::Symbol, n_current) = Dcoef(Temp(z),n_tot(n_current, z),species)
 
-# thermal diffusion factors (from Krasnopolsky 2002)
-# TODO: these probably need to be verified for deuterated species.
+# thermal diffusion factors (all verified by Krasnopolsky 2002)
 thermaldiff(species) = get(Dict(:H=>-0.25, :H2=>-0.25, :D=>-0.25, :HD=>-0.25,
                                 :He=>-0.25), species, 0)
 
@@ -2027,7 +1972,7 @@ end
 # Change following line as needed depending on local machine
 const solarflux=readandskip(scriptdir*"marssolarphotonflux.dat",'\t', 
                             Float64,skipstart=4)[1:2000,:]
-solarflux[:,2] = solarflux[:,2]/2
+solarflux[:,2] = solarflux[:,2]/2  # TODO: why is this here
 
 absorber = Dict(:JCO2ion =>:CO2,
                 :JCO2toCOpO =>:CO2,
@@ -2331,7 +2276,7 @@ for i in 1:100
 end
 
 # write out the new converged file to matching folder. 
-towrite = experimentdir*FNext*"/converged_standardwater_D_"*FNext*".h5"
+towrite = experimentdir*FNext*"/converged_"*FNext*".h5"
 write_ncurrent(n_current, towrite)
 println("Wrote $(towrite)")
 
@@ -2355,22 +2300,22 @@ xsect_dict = Dict("CO2"=>[co2file, co2exfile],
 # Log temperature and water parameters =========================================
 if args[1]=="temp"
     input_string = "T_0=$(args[2]), T_tropo=$(args[3]), T_exo=$(args[4])" * 
-                   "\nwater init=8e-4\nDH=5.5 \nOflux=1.2e8" #*
+                   "\nwater init=$(MR)\nDH=5.5 \nOflux=1.2e8" #*
                    #"\nlapse rate=$(lapserate_logme)\n"
 elseif args[1]=="water"
-    input_string = "T_0=190.0, T_tropo=110.0, T_exo=200.0\n" *
+    input_string = "T_s=$(meanTs), T_tropo=$(meanTt), T_exo=$(meanTe)\n" *
                    "water init=$(args[2])\nDH=5.5\nOflux=1.2e8\n" #*
                    #"lapse rate=$(lapserate_logme)\n"
 elseif args[1]=="dh"
-    input_string = "T_0=190.0, T_tropo=110.0, T_exo=200.0\nwater=8e-4\n" *
+    input_string = "T_s=$(meanTs), T_tropo=$(meanTt), T_exo=$(meanTe)\nwater=(MR)\n" *
                    "DH=$(args[2]) \nOflux=1.2e8\n"#lapse rate=$(lapserate_logme)\n"
 elseif args[1]=="Oflux"
-    input_string = "T_0=190.0, T_tropo=110.0, T_exo=200.0 \nwater=8e-4" *
+    input_string = "T_s=$(meanTs), T_tropo=$(meanTt), T_exo=$(meanTe)\nwater=(MR)" *
                    "\nDH=5.5\nOflux=$(Of)\n"#lapse rate=$(lapserate_logme)\n"
 end
 
 # Write the log ================================================================
-f = open(experimentdir*FNext*"/convergence_"*FNext*".txt", "w")
+f = open(experimentdir*FNext*"/convergence_data_"*FNext*".txt", "w")
 write(f, "Finished convergence for $(args[1]) experiment with control parameters: \n")
 write(f, input_string)
 write(f, "\nSVP fixed: $(fix_SVP)\n")
@@ -2395,3 +2340,13 @@ close(f)
 println("ALERT: Finished convergence")
 println()
 
+# extra code to calculate final water - if letting water vary
+# H2O_per_cc_final = sum(n_current[:H2O][1:end])
+# HDO_per_cc_final = sum(n_current[:HDO][1:end])
+# H2Oprum_final = (H2O_per_cc_final * dz) * (18/1) * (1/6.02e23) * (1/1) * (1e4/1)
+# HDOprum_final = (HDO_per_cc_final * dz) * (19/1) * (1/6.02e23) * (19/18) * (1e4/1)
+
+# f2 = open(experimentdir*FNext*"/finalwater_"*FNext*".txt", "w")
+# write(f2, "H2O pr μm: $(H2Oprum_final)\n")
+# write(f2, "HDO pr μm: $(HDOprum_final)\n")
+# close(f)
