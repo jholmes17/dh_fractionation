@@ -17,11 +17,20 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
 matplotlib.rcParams.update({'font.size': 16})
+plt.style.use('default')
+plt.rc('text', usetex=False)
+plt.rcParams['font.family'] = 'sans-serif'
+plt.rcParams['font.sans-serif'] = 'Louis George Caf?'
+plt.rcParams['font.monospace'] = 'FreeMono'
+plt.rcParams['font.size'] = 18
+plt.rcParams['axes.labelsize'] = 22
+plt.rcParams['xtick.labelsize'] = 18
+plt.rcParams['ytick.labelsize'] = 18
 
 # Fit the 250K data on the red edge and extrapolate to 220 nm ==================
 
 # Do the line fit
-data250 = np.loadtxt("chaffincode-working/uvxsect/HDO_250K.dat")
+data250 = np.loadtxt("uvxsect/HDO_250K.dat")
 wvs_to_fit = data250[-30:][:, 0]
 xsect_to_fit = data250[-30:][:, 2]
 xsect_to_fit_log = np.log10(xsect_to_fit)
@@ -60,7 +69,7 @@ combined_xsects_250K = np.hstack((data250[:, 2], new_xsects_250))
 # Now work on 298 K ============================================================
 # Show that it is reasonable to approximate the cross section with a 1D polynomial in 
 # logspace after ~178 nm.
-data298 = np.loadtxt("chaffincode-working/uvxsect/HDO_298K.dat")
+data298 = np.loadtxt("uvxsect/HDO_298K.dat")
 data298 = data298[:-5]  # get rid of the empty rows
 
 # fig = plt.figure(figsize=(10, 8))
@@ -103,7 +112,7 @@ extrap_red_edge = np.column_stack((newwv_298, new_xsects_298))
 #np.savetxt("HDO_extrapolated_298K.dat", extrap_red_edge, fmt=['%.1f', '%.7e'] )
 
 # Use Cheng+ 2004 data to get cross sections between 125 to 140 nm -------------
-cheng2004 = np.loadtxt("chaffincode-working/uvxsect/HDO_cheng2004.dat")
+cheng2004 = np.loadtxt("uvxsect/HDO_cheng2004.dat")
 
 # We need the values at the half-wavelengths, so we interpolate.
 newx = np.arange(125.5, 140, 1)
@@ -180,29 +189,38 @@ y_interp_250 = np.interp(x_interp_250, all_250_wvs, all_250_xsects)
 interpdata = np.column_stack((x_interp_250, y_interp_250))
 
 # Final figure of HDO cross sections at 250 and 298K
-# fig = plt.figure(figsize=(10,8))
-# c1 = "cornflowerblue"
-# plt.semilogy(newwv_blu_298, new_xsects_blu_298, color=c1, linestyle=":")#, label="extrapolated")
-# plt.semilogy(cheng2004[:,0], cheng2004[:,1], color=c1, linestyle="--", label="Cheng+2004 data (300K)")
-# plt.semilogy(a[:,0], a[:,2], color=c1, linestyle="-", label="Cheng+1999 data (298K)")
-# plt.semilogy(red_edge_extrap[:,0], red_edge_extrap[:,1], color=c1, linestyle=":")#, label="extrapolated")
+fig = plt.figure(figsize=(7, 5))
+ax = plt.gca()
+ax.set_facecolor("#ededed")
+ax.grid(zorder=0, color="white", which="major")
+for side in ["top", "bottom", "left", "right"]:
+    ax.spines[side].set_visible(False)
+
+c1 = "cornflowerblue"
+plt.semilogy(newwv_blu_298, new_xsects_blu_298, color=c1, linestyle=":")#, label="extrapolated")
+plt.semilogy(cheng2004[:,0], cheng2004[:,1], color=c1, linestyle="--", label="Cheng+2004 data (300K)")
+plt.semilogy(data298[:,0], data298[:,2], color=c1, linestyle="-", label="Cheng+1999 data (298K)")
+plt.semilogy(extrap_red_edge[:,0], extrap_red_edge[:,1], color=c1, linestyle=":")#, label="extrapolated")
 # c2 = "xkcd:bright orange"
 # plt.semilogy(np.hstack((newwv_blu_298, cheng2004[:,0])), np.hstack((new_xsects_blu_298*0.5,cheng2004[:,1]*0.5)), color=c2, linestyle="-.")
 # plt.semilogy(newwv_250, new_xsects_250, color=c2, linestyle=":")#, label="extrapolated")
 # plt.semilogy(data250[:,0], data250[:,2], color=c2, label="Cheng+1999 (250K)")
-# plt.title("HDO photodissociation cross section", y=1.02)
-# plt.ylabel("Cross section (cm^2)")
-# plt.xlabel("Wavelength (nm)")
-# plt.xlim(right=200)
-# plt.ylim(bottom=1e-23)
+plt.title("HDO photodissociation cross section", y=1.02)
+plt.ylabel("Cross section (cm^2)")
+plt.xlabel("Wavelength (nm)")
+plt.xlim(right=200)
+plt.ylim(bottom=1e-23)
 
-# custom_lines = [Line2D([0], [0], color=c1, linestyle="-"),
-#                 Line2D([0], [0], color=c2, linestyle="-"), 
-#                 Line2D([0], [0], color=c1, linestyle="--"), 
-#                 Line2D([0], [0], color="black", linestyle=":"),
-#                 Line2D([0], [0], color=c2, linestyle="-.")]
+custom_lines = [Line2D([0], [0], color=c1, linestyle="-"),
+                # Line2D([0], [0], color=c2, linestyle="-"), 
+                Line2D([0], [0], color=c1, linestyle="--"), 
+                Line2D([0], [0], color=c1, linestyle=":")]
+                # Line2D([0], [0], color=c2, linestyle="-.")]
 
-# plt.legend(custom_lines, ["Cheng+1999 (298K)", "Cheng+1999 (250K)", "Cheng+2004 (300K)", "extrapolated", "0.5*(Cheng+2004 data and extrapolation)"], loc="lower left")
-# plt.show()
+plt.legend(custom_lines, ["Cheng+1999 (298K)",
+                          # "Cheng+1999 (250K)",
+                          "Cheng+2004 (300K)", "extrapolated"], loc="lower left")
+                          # "0.5*(Cheng+2004 data and extrapolation)"], loc="lower left")
+plt.savefig("../Results/ALL STUDY PLOTS/HDO_xsects.png", bbox_inches="tight")
 
-# np.savetxt("HDO_250K_extended.dat", interpdata, fmt=['%.1f', '%.7e'] )
+np.savetxt("uvxsect/HDO_xsects.dat", interpdata, fmt=['%.1f', '%.7e'] )

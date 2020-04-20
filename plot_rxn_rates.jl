@@ -6,6 +6,7 @@
 
 # Eryn Cangi
 # 5 April 2019
+# Last edited: 3 January 2020 (NOT DONE)
 # Currently tested for Julia: 0.7
 ################################################################################
 using PyPlot
@@ -14,6 +15,9 @@ using LaTeXStrings
 using PyCall
 using PlotUtils
 using JLD
+using Analysis
+
+include("PARAMETERS.jl")
 
 threebody(k0, kinf) = :($k0*M/(1+$k0*M/$kinf)*0.6^((1+(log10($k0*M/$kinf))^2)^-1.0))
 threebodyca(k0, kinf) = :($k0/(1+$k0/($kinf/M))*0.6^((1+(log10($k0/($kinf*M)))^2)^-1.0))
@@ -191,67 +195,6 @@ reactionnet = [   #Photodissociation
              [[:CO2pl, :HD], [:CO2pl, :H, :D], :((2/5)*8.7e-10)]
              ];
 
-function better_plot_bg(axob)
-    axob.set_facecolor("#ededed")
-    axob.grid(zorder=0, color="white", which="both")
-    for side in ["top", "bottom", "left", "right"]
-        axob.spines[side].set_visible(false)
-    end
-end
-
-function get_ncurrent(readfile)
-    #=
-    Retrieves the matrix of species concentrations by altitude from an HDF5
-    file containing a converged atmosphere.
-    =#
-    n_current_tag_list = map(Symbol, h5read(readfile,"n_current/species"))
-    n_current_mat = h5read(readfile,"n_current/n_current_mat");
-    n_current = Dict{Symbol, Array{Float64, 1}}()
-    
-    for ispecies in [1:length(n_current_tag_list);]
-        n_current[n_current_tag_list[ispecies]] = reshape(n_current_mat[:,ispecies],length(alt)-2)
-    end
-    return n_current
-end
-
-function Tpiecewise(z::Float64, Tsurf, Ttropo, Texo, E="")
-    #= DO NOT MODIFY! If you want to change the temperature, define a
-    new function or select different arguments and pass to Temp(z)
-
-    a piecewise function for temperature as a function of altitude,
-    using Krasnopolsky's 2010 "half-Gaussian" function for temperatures 
-    altitudes above the tropopause, with a constant lapse rate (1.4K/km) 
-    in the lower atmosphere. The tropopause width is allowed to vary
-    in certain cases.
-
-    z: altitude above surface in cm
-    Tsurf: Surface temperature in K
-    Tropo: tropopause tempearture
-    Texo: exobase temperature
-    E: type of experiment, used for determining if mesopause width will vary 
-    =#
-    
-    lapserate = -1.4e-5 # lapse rate in K/cm
-    ztropo = 120e5  # height of the tropopause top
-    
-    # set the width of tropopause. It varies unless we're only varying the 
-    # exobase temperature.
-    if (E=="tropo") || (E=="surf")
-        ztropo_bot = (Ttropo-Tsurf)/(lapserate)
-        ztropowidth = ztropo - ztropo_bot
-    else
-        ztropo_bot = (Ttropo-Tsurf)/(lapserate)
-        ztropowidth = ztropo - ztropo_bot
-    end
-
-    if z >= ztropo  # upper atmosphere
-        return Texo - (Texo - Ttropo)*exp(-((z-ztropo)^2)/(8e10*Texo))
-    elseif ztropo > z >= ztropo - ztropowidth  # tropopause
-        return Ttropo
-    elseif ztropo-ztropowidth > z  # lower atmosphere
-        return Tsurf + lapserate*z
-    end
-end
 function make_ratexdensity(n_current, rxnnet, temparr)
 
     rxn_dat =  Dict{String,Array{Float64, 1}}()

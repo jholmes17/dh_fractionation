@@ -10,32 +10,41 @@
 # Currently tested for Julia: 0.7
 ################################################################################
 
-using Photochemistry
+using Analysis
 using PyPlot
 using PyCall
+
+include("PARAMETERS.jl")
 
 function h2olost(cur_h2o, DHnow=5.5, DH0=1, f=0.001)
     return cur_h2o * ((DHnow/DH0)^(1/(1-f)) - 1)
 end
 
-function plot_water_loss(f_thermal, f_both; current_inventory=25, moredh=false, 
-                         plot_past=false)
+function required_escape_rate(W_lost)
+    #=
+    Calculates the required escape rate of H atoms, assuming a constant escape
+    rate and a linear change with time. NOTE: this assumes all water lost 
+    (W_lost) is in the form H2O.
+    =#
+    H_lost = GEL_to_molecule(W_lost, "H")
+    flux = H_lost / 1.419e17 # units #/cm^2s 
+end
+
+function plot_water_loss(f_therm, f_both, f_therm_range=nothing, f_therm_both=nothing)
     #=
     Plot water loss as a result of fractionation factor results and also a line
     according to the D/H ratio used. 
 
-    f_thermal: fractionation factor results for only thermal escape
-    f_nonthermal: fractionation factor results for both thermal + nonthermal
-    current_inventory: current water inventory in m GEL. If a vector, 
-                        calculates lines for each.
-    moredh: whether to plot a few other lines for different D/H values.
-    plot_past: whether to plot past studies on the plot
+    f_therm: mean fractionation factor for only thermal escape
+    f_both: mean fractionation factor for both thermal + nonthermal
+    f_therm_range: min and max fractionation factor for thermal escape
+    f_both_range: min and max fractionation factor for all types of escape
     =#
     # set up the domain 
-    farray = range(0.000005, stop=1, length=500)
+    cur_h2o = range(20, stop=30, length=11)
 
     # make plot look nice
-    fig = figure(figsize=(10, 7))
+    fig = figure(figsize=(6,4))
     rcParams = PyCall.PyDict(matplotlib."rcParams")
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = "Louis George Caf?"
@@ -46,102 +55,68 @@ function plot_water_loss(f_thermal, f_both; current_inventory=25, moredh=false,
     rcParams["ytick.labelsize"] = 26
     ax = gca()
     plot_bg(ax)
-    xlabel(L"Fractionation factor $f$")
-    ylabel("Water lost (m GEL)")
+    xlabel("Current exchangeable water (m GEL)")
+    ylabel("Water lost to space (m GEL)")
     title("Water lost since 4.5 Ga")
 
-    # colors
-    deemph = "#555555"  # color for de-emphasis
+    # plot 
+    blues = get_grad_colors(2, "Blues", strt=0.5)
 
-    # past studies
-    if plot_past
-        ax.scatter(0.32, 3.4, zorder=2, marker="v", s=100, color=deemph) # Yung
-        ax.scatter(0.016, 65, zorder=2, marker="*", s=100, color=deemph) # Kras 2000 Model 1
-        ax.scatter(0.135, 160, zorder=2,marker="^", s=100, color=deemph) # Kras 2000 Model 2
-        text(0.1, 150, "K2000, Model 1", ha="right", color=deemph, fontsize=22)
-        text(0.02, 60, "K2000, Model 2", color=deemph, fontsize=22)
-        text(0.03, 0, "Yung 1988", color=deemph, fontsize=22)
+    # calculate and plot the loss for mean f
+    loss_t = h2olost(cur_h2o, 5.5, 1.275, f_therm)
+    loss_b = h2olost(cur_h2o, 5.5, 1.275, f_both)
+
+    ax.plot(cur_h2o, loss_t, zorder=2, color=blues[1, :], marker="D", ms=12)
+    ax.plot(cur_h2o, loss_b, zorder=2, color=blues[2, :], marker="D", ms=12)
+
+    if f_therm_range != nothing
+        therm_min_loss = h2olost(cur_h2o, 5.5, 1.275, f_therm_range[1])
+        therm_max_loss = h2olost(cur_h2o, 5.5, 1.275, f_therm_range[2])
+        ax.fill_between(cur_h2o, therm_min_loss, therm_max_loss, zorder=2,
+                        alpha=0.4, color=blues[1, :])
     end
 
-    if typeof(current_inventory)==Int64
-        # case for a single water value 
-        emph = "xkcd:cerulean blue"
-        emphline = "xkcd:clear blue"
-        loss = [h2olost(current_inventory, 5.5, 1.275, f) for f in farray]
-        loss_thermal = [h2olost(current_inventory, 5.5, 1.275, f) for f in f_thermal]
-        loss_both = [h2olost(current_inventory, 5.5, 1.275, f) for f in f_both]
-        filename_tag = string(current_inventory)
-
-        ax.semilogx(farray, loss, zorder=2, color=emphline)
-        ax.scatter(f_thermal, loss_thermal, zorder=3, color=emph, marker="o", s=150,
-                   label="Thermal escape only")
-        ax.scatter(f_both, loss_both, zorder=3, color=emph, marker="D", s=150,
-                   label="Thermal + non-thermal escape")
-        ax.legend(fontsize=20)
-    else
-        # colors
-        emph = ["xkcd:cerulean blue", "xkcd:vibrant blue", "xkcd:cobalt blue"]
-        ls = [":", "--", "-"]
-
-        # make the arrays to store lost water values
-        loss = Array{Float64}(undef, length(current_inventory), 500)
-        loss_thermal = Array{Float64}(undef, length(current_inventory), length(f_thermal))
-        loss_both = Array{Float64}(undef, length(current_inventory), length(f_both))
-        for i in range(1, stop=length(current_inventory))
-            loss[i, :] = [h2olost(current_inventory[i], 5.5, 1.275, f) for f in farray]
-            loss_thermal[i, :] = [h2olost(current_inventory[i], 5.5, 1.275, f) for f in f_thermal]
-            loss_both[i, :] = [h2olost(current_inventory[i], 5.5, 1.275, f) for f in f_both]
-
-            ax.semilogx(farray, loss[i, :], zorder=2, color=emph[i], linestyle=ls[i], 
-                        label="Present-day water: $(current_inventory[i]) m GEL")
-            ax.scatter(f_thermal, loss_thermal[i, :], zorder=3, color=emph[i], marker="o", s=150)
-            ax.scatter(f_both, loss_both[i, :], zorder=3, color=emph[i], marker="D", s=150)
-        end
-        filename_tag = string(current_inventory[1]) * "-" * string(current_inventory[end])
-
-        # legend stuff
-        handles, labels = ax.get_legend_handles_labels()
-        ax.legend(handles, labels)
-        jlines = pyimport("matplotlib.lines")
-        man_marks = [jlines.Line2D([0], [0], color="black", linewidth=0, marker="o"),
-                        jlines.Line2D([0], [0], color="black", linewidth=0, marker="D")]
-        man_lbls = ["Thermal escape", "Thermal + non-thermal escape"]
-        append!(man_marks, handles)
-        append!(man_lbls, labels)
-        ax.legend(man_marks, man_lbls, fontsize=20) 
+    if f_both_range != nothing
+        both_min_loss = h2olost(cur_h2o, 5.5, 1.275, f_both_range[1])
+        both_max_loss = h2olost(cur_h2o, 5.5, 1.275, f_both_range[2])
+        ax.fill_between(cur_h2o, both_min_loss, both_max_loss, zorder=2,
+                        alpha=0.4, color=blues[2, :])
     end
+    println("Thermal escape water loss (based on f for mean temperature profile):")
+    println(Array(loss_t))
+    println("All escape water loss (based on f for mean temperature profile): ")
+    println(Array(loss_b))
 
-    # if moredh
-    #     loss_1p5 = [h2olost(current_inventory, 1.5, 1.275, f) for f in farray]
-    #     loss_10 = [h2olost(current_inventory, 10, 1.275, f) for f in farray]
-    #     ax.semilogx(farray, loss_1p5, zorder=2, color=deemph)
-    #     ax.semilogx(farray, loss_10, zorder=2, color=deemph)
-    #     text(0.0000135, loss_1p5[2], L"(D/H)$_{M}$ = $1.5$(D/H)$_{E}$", 
-    #          color=deemph, fontsize=22)
-    #     text(0.0000135, loss_10[2], L"(D/H)$_{M}$ = $10$(D/H)$_{E}$", 
-    #          color=deemph, fontsize=22)
-    #     text(0.0000135, 90, L"(D/H)$_{M}$ = $5.5$(D/H)$_{E}$", color=emph, fontsize=22)
-    # end
-    
-    ylim(0, 240)
-    savefig("../Results/ALL STUDY PLOTS/h2oloss_$(filename_tag)m_current.png", 
-            bbox_inches="tight")
-    println("Water loss values for $(current_inventory):")
-    println("Thermal+Nonthermal: ", loss_both)
-    println("Thermal only: ", loss_thermal)
     println()
+
+    println("Thermal escape minimum water loss (f minima):")
+    println(Array(therm_min_loss))
+    println("Thermal escape maximum water loss (f maxima):")
+    println(Array(therm_max_loss))
+
+    println()
+
+    println("All escape minimum water loss (f minima):")
+    println(Array(both_min_loss))
+    println("All escape maximum water loss (f maxima):")
+    println(Array(both_max_loss))
+
+    text(21, 83, "thermal+non-thermal escape", rotation=24, color=blues[2, :])
+    text(22, 68, "thermal escape only", rotation=23, color=blues[1, :])
+
+    savefig("../Results/ALL STUDY PLOTS/h2oloss.png", bbox_inches="tight")
 end
 
-function plot_simple_water_loss(current_inventory=25)
+function plot_simple_water_loss(cur_h2o=25)
     #=
     Plot just the Rayleigh distillation equation, no fractionation factor results.
     For demonstration purposes.
 
-    current_inventory: assumed water inventory in m GEL.
+    cur_h2o: assumed water inventory in m GEL.
     =#
     farray = range(0.000005, stop=1, length=100)
 
-    l1 = [h2olost(current_inventory, 5.5, 1.275, f) for f in farray]
+    l1 = [h2olost(cur_h2o, 5.5, 1.275, f) for f in farray]
 
     # make plot
     fig = figure(figsize=(10, 7))
@@ -172,17 +147,14 @@ function plot_simple_water_loss(current_inventory=25)
     savefig("../Results/ALL STUDY PLOTS/h2oloss_simple.png", bbox_inches="tight")
 end
 
-println("ALERT: Make sure the f values are correct. They must be filled in manually")
-f_thermal = [0.0012, 0.0012, 0.016, 0.000043, 0.0022, 0.00055, 0.0013,
-                 0.0011, 0.0011]
-f_nonthermal = [0.038, 0.032, 0.065, 0.038, 0.068, 0.023, 0.037,
-                0.037, 0.039]
+function main()
+    println("ALERT: Make sure the f values are correct."*
+            " They must be filled in manually, using output from plot_f_results.jl")
+    f_mean_thermal = 0.0018797755997056428
+    f_therm_range = [3.23715e-5, 0.0170131]
+    f_mean_both = 0.05971712335227322
+    f_both_range = [0.032912, 0.102279]
 
-println("Thermal f values: ", f_thermal)
-println("Thermal+nonthermal f values: ", f_both)
+    plot_water_loss(f_mean_thermal, f_mean_both, f_therm_range, f_both_range)
+end
 
-plot_water_loss(f_thermal, f_nonthermal, current_inventory=20)
-plot_water_loss(f_thermal, f_nonthermal, current_inventory=25)
-plot_water_loss(f_thermal, f_nonthermal, current_inventory=30)
-
-plot_water_loss(f_thermal, f_nonthermal, current_inventory=[20,25,30])

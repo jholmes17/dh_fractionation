@@ -15,168 +15,45 @@ using LaTeXStrings
 using PyCall
 using PlotUtils
 using JLD
+using Analysis
+using DataFrames
+
+include("PARAMETERS.jl")
 
 # fundamental constants ========================================================
-const boltzmannK = 1.38e-23;    # J/K
-const bigG = 6.67e-11;          # N m^2/kg^2
-const mH = 1.67e-27;            # kg
-const marsM = 0.1075*5.972e24;  # kg
-const radiusM = 3396e5;         # cm
 DH = 5.5 * 1.6e-4               # SMOW value from Yung 1988
 
-# Basic altitude stuff
-alt = (0:2e5:250e5)
-n_alt_index=Dict([z=>clamp((i-1),1, length(alt)-2) for (i, z) in enumerate(alt)])
-const zmax = alt[end];
+global tvals = Dict("surface"=>[150.0, 160.0, 170.0, 180.0, 190.0, 200.0, 210.0, 220.0, 
+                                230.0, 240.0, 250.0, 260.0, 270.0],
+                    "tropopause"=>[100.0, 110.0, 120.0, 130.0, #70.0, 80.0, 90.0, 
+                                   140.0, 150.0, 160.0],
+                    "exobase"=>[150.0, 175.0, 200.0, 225.0, 250.0, 275.0, 
+                                300.0, 325.0, 350.0])
+global Oflux_vals = ["8e7", "9e7", "1.0e8", "1.1e8", "1.2e8", "1.3e8", 
+                            "1.4e8", "1.5e8", "1.6e8"]
+
+global watervals = [1, 10, 25, 50, 100]#, 150]
+global watervals_str = ["1.33e-5", "1.41e-4", "3.72e-4", "8.2e-4", "2.89e-3"]#, "1.358e-2"]
+
+# nominal value plot location or index, 1-indexed for Julia
+global nom_i_julia = Dict("exobase"=>meanTe, "tropopause"=>meanTt, "surface"=>meanTs, 
+                   "O flux"=>findfirst(isequal("1.2e8"), Oflux_vals), 
+                   "water"=>10)
+# Passing the values to PyPlot requires 0-indexing so here it is:
+global nom_i_py = Dict("exobase"=>meanTe, "tropopause"=>meanTt, "surface"=>meanTs, 
+                "O flux"=>findfirst(isequal("1.2e8"), Oflux_vals)-1, 
+                "water"=>10)
+
+# set the data for comparison. Order:
+# CO MR (Trainer+2019), O2 MR (Trainer+2019), H2 abundance (Kras&Feldman 2001),
+# O3 μm-atm (Clancy 2016)
+global data = [5.8e-4, 1.61e-3, 15, 1.18]  # CO MR, O2 MR, H2 ppm, O3 μm-atm
+global s = [0.8e-4, 0.09e-3, 5, 0.7]     # sigmas (uncertainty) on each
+
+medgray = "#444444"
+sz = 10
 
 # Functions ====================================================================
-function Tpiecewise(z::Float64, Tsurf, Ttropo, Texo, E="")
-    #= DO NOT MODIFY! If you want to change the temperature, define a
-    new function or select different arguments and pass to Temp(z)
-
-    a piecewise function for temperature as a function of altitude,
-    using Krasnopolsky's 2010 "half-Gaussian" function for temperatures 
-    altitudes above the tropopause, with a constant lapse rate (1.4K/km) 
-    in the lower atmosphere. The tropopause width is allowed to vary
-    in certain cases.
-
-    z: altitude above surface in cm
-    Tsurf: Surface temperature in K
-    Tropo: tropopause tempearture
-    Texo: exobase temperature
-    E: type of experiment, used for determining if mesopause width will vary 
-    =#
-    
-    lapserate = -1.4e-5 # lapse rate in K/cm
-    ztropo = 120e5  # height of the tropopause top
-    
-    # set the width of tropopause. It varies unless we're only varying the 
-    # exobase temperature.
-    if (E=="tropo") || (E=="surf")
-        ztropo_bot = (Ttropo-Tsurf)/(lapserate)
-        ztropowidth = ztropo - ztropo_bot
-    else
-        ztropo_bot = (Ttropo-Tsurf)/(lapserate)
-        ztropowidth = ztropo - ztropo_bot
-    end
-
-    if z >= ztropo  # upper atmosphere
-        return Texo - (Texo - Ttropo)*exp(-((z-ztropo)^2)/(8e10*Texo))
-    elseif ztropo > z >= ztropo - ztropowidth  # tropopause
-        return Ttropo
-    elseif ztropo-ztropowidth > z  # lower atmosphere
-        return Tsurf + lapserate*z
-    end
-end
-
-function get_ncurrent(readfile)
-    n_current_tag_list = map(Symbol, h5read(readfile,"n_current/species"))
-    n_current_mat = h5read(readfile,"n_current/n_current_mat");
-    n_current = Dict{Symbol, Array{Float64, 1}}()
-    for ispecies in [1:length(n_current_tag_list);]
-        n_current[n_current_tag_list[ispecies]] = reshape(n_current_mat[:,ispecies],length(alt)-2)
-    end
-    n_current
-end
-
-function get_H_fluxes(readfile, oflux, temps)
-    #=
-    Produces an array of H and D fluxes at the top of the atmosphere (200 km) due to
-    introduction of water parcels of various ppm and various altitudes.
-    =#
-
-    n_current = get_ncurrent(readfile)
-
-    # Calculate the D flux: sum of (H population @ 200 km) * (D flux rate)
-    # and (H2 population @ 200 km) * 2*(H2 flux rate) and 
-    # (HD population @ 200 km) * (HD flux rate)
-    Hfluxes = (n_current[:H][end]*speciesbcs_var(:H, oflux, temps)[2,2]
-                  + 2*n_current[:H2][end]*speciesbcs_var(:H2, oflux, temps)[2,2]
-                  + n_current[:HD][end]*speciesbcs_var(:HD, oflux, temps)[2,2])
-    return Hfluxes
-end
-
-function get_D_fluxes(readfile, oflux, temps)
-    #=
-    Gets value of D flux out of the atmosphere in a converged file.
-    =#
-    n_current = get_ncurrent(readfile)
-
-    # Calculate the D flux: sum of (D population @ 200 km) * (D flux rate)
-    # and (HD population @ 200 km) * (HD flux rate)
-    Dfluxes = (n_current[:D][end]*speciesbcs_var(:D, oflux, temps)[2,2]
-                  + n_current[:HD][end]*speciesbcs_var(:HD, oflux, temps)[2,2])
-    return Dfluxes
-end
-
-function effusion_velocity(Texo::Float64, m::Float64)
-    #=
-    Returns effusion velocity for a species.
-    Texo: temperature of the exobase (upper boundary) in K
-    m: mass of one molecule of species in amu
-    =#
-    lambda = (m*mH*bigG*marsM)/(boltzmannK*Texo*1e-2*(radiusM+zmax))
-    vth=sqrt(2*boltzmannK*Texo/(m*mH))
-    v = 1e2*exp(-lambda)*vth*(lambda+1)/(2*pi^0.5)
-    return v
-end
-
-function n_tot(n_current, z)
-    specieslist = [:CO2, :O2, :O3, :H2, :OH, :HO2, :H2O, :H2O2, :O, :CO,
-                   :O1D, :H, :N2, :Ar, :CO2pl, :HOCO,
-                   # species for deuterium chemistry:
-                   :HDO, :OD, :HDO2, :D, :DO2, :HD, :DOCO];
-    # get the total number density at a given altitude
-    thisaltindex = n_alt_index[z]
-    return sum( [n_current[s][thisaltindex] for s in specieslist] )
-end
-
-Psat(T::Float64) = (133.3/(10^6 * boltzmannK * T))*(10^(-2445.5646/T 
-                    + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 
-                    - 6.757169))
-
-Psat_HDO(T::Float64) = (133.3/(10^6 * boltzmannK * T))*(10^(-2445.5646/T 
-                    + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 
-                    - 6.757169))
-
-function speciesbcs_var(species, oflux, temps)
-
-    Temp(z::Float64) = Tpiecewise(z, temps[1], temps[2], temps[3])
-    H2Osat = map(x->Psat(x), map(Temp, alt))
-    HDOsat = map(x->Psat_HDO(x), map(Temp, alt))
-    H_effusion_velocity = effusion_velocity(Temp(zmax),1.0)
-    H2_effusion_velocity = effusion_velocity(Temp(zmax),2.0)
-    D_effusion_velocity = effusion_velocity(Temp(zmax),2.0)
-    HD_effusion_velocity = effusion_velocity(Temp(zmax),3.0)
-
-    speciesbclist=Dict(
-                    :CO2=>["n" 2.1e17; "f" 0.],
-                    :Ar=>["n" 2.0e-2*2.1e17; "f" 0.],
-                    :N2=>["n" 1.9e-2*2.1e17; "f" 0.],
-                    :H2O=>["n" H2Osat[1]; "f" 0.], # bc doesnt matter if H2O fixed
-                    :HDO=>["n" HDOsat[1]; "f" 0.],
-                    :O=>["f" 0.; "f" oflux],
-                    :H2=>["f" 0.; "v" H2_effusion_velocity],
-                    :HD=>["f" 0.; "v" HD_effusion_velocity],
-                    :H=>["f" 0.; "v" H_effusion_velocity],
-                    :D=>["f" 0.; "v" D_effusion_velocity],
-                   );
-    get(speciesbclist,
-        species,
-        ["f" 0.; "f" 0.])
-end
-
-function better_plot_bg(axob)
-    axob.set_facecolor("#ededed")
-    axob.grid(zorder=0, color="white", which="major")
-    for side in ["top", "bottom", "left", "right"]
-        axob.spines[side].set_visible(false)
-    end
-end
-
-# Special functions for this file ==============================================
-
-searchdir(path, key) = filter(x->occursin(key,x), readdir(path))
 
 function normalize(arr, base_i)
     normed_arr = arr ./ arr[base_i]
@@ -186,30 +63,6 @@ end
 function normalize_val(arr, normval)
     normed_arr = arr ./ normval
     return normed_arr
-end
-
-function get_colors(L, cmap)
-    #=
-    Generates some colors based on a color map for use in plotting a bunch of
-    lines all at once.
-    L: number of colors to generate.
-    cmap: color map name
-    =#
-
-    colors_dumb = [cgrad(Symbol(cmap))[x] for x in range(0, stop=1, length=L)]
-    c = Array{Float64}(undef, L, 3)
-
-    for i in range(1, length=length(colors_dumb))
-        c[i, 1] = red(colors_dumb[i])
-        c[i, 2] = green(colors_dumb[i])
-        c[i, 3] = blue(colors_dumb[i])
-    end
-    return c
-end
-
-function areadensity_to_micron_atm(numpercm2)
-    # #/cm^2 * (cm^2/m^2) * (10μm-am/2.687e20 #/m^2)
-    return numpercm2 * (1e4/1) * (10/2.687e20)
 end
 
 # Special plotting functions (apply to all main plotting funcs) ----------------
@@ -229,14 +82,14 @@ function DH_alt_prof_plot(DHproflist, exps, v, s, optext="", optlegend="")
     # do the DH altitudinal profile plot
     # set up plot
     fig, ax = subplots(figsize=(6,4))
-    better_plot_bg(ax)
+    plot_bg(ax)
     subplots_adjust(wspace=0, bottom=0.15)
     ax.set_xlabel("D/H ratio (in atomic D, H)")
     ax.set_ylabel("Altitude (km)")
     ax.set_yticks(ticks=collect(0:50:200))
     
     # generate colors
-    c = get_colors(length(exps), "viridis")
+    c = get_grad_colors(length(exps), "viridis")
 
     # do actual plotting
     if typeof(exps[1]) != String
@@ -248,13 +101,14 @@ function DH_alt_prof_plot(DHproflist, exps, v, s, optext="", optlegend="")
     end
 
     # set savepath
-    plotpath = lead*v*"_plots/"*s
+    plotpath = mainpath*v*"_plots/"*s
     savepath = plotpath*v*optext*"_DH_prof.png"
-    #legend(fontsize=12, bbox_to_anchor=[1.01,1], loc=2, borderaxespad=0)
+    legend(fontsize=12, bbox_to_anchor=[1.01,1], loc=2, borderaxespad=0)
     savefig(savepath, bbox_inches="tight")
 
     # save it again but with log x-axis 
     xscale("log")
+    # xlim(3.5e-4,5e-4)
     xticks(rotation=45)
     savepath = plotpath*"/"*v*optext*"_DH_prof_LOG.png"
     savefig(savepath, bbox_inches="tight")
@@ -273,7 +127,7 @@ function CO_O2_plot(xvals, ydict, xlab, pathkey, meanX, s, tempkey="")
     =#
 
     # Pretty ugly, but data structs are always better than if/else, right?
-    paststudies = Dict("water"=>Dict("yung"=>15, "nair"=>[3,8.8]), # these are in ppm
+    paststudies = Dict("water"=>Dict("yung"=>15, "nair"=>[3,8.8]), # these are in pr μm
                             "Oflux"=>Dict("yung"=>5, "nair"=>9), # indices
                             "temp_surface"=>Dict("yung"=>220, "nair"=>214), 
                             "temp_tropopause"=>Dict("yung"=>140, "nair"=>140), 
@@ -352,25 +206,27 @@ function CO_O2_plot(xvals, ydict, xlab, pathkey, meanX, s, tempkey="")
         [l.set_visible(false) for (i,l) in enumerate(ax.xaxis.get_ticklabels()) if i % 2 != 0]
     end
 
-    plotpath = lead*pathkey*"_plots/"*s
+    plotpath = mainpath*pathkey*"_plots/"*s
     savepath = plotpath*lookupkey*"_CO_and_O2.png"
     savefig(savepath, bbox_inches="tight")
     close(fig)
 end
 
-# For the main case in temperatures since they have weird numbers -------------
+# For the main case in temperatures since they have weird numbers --------------
 
 function makenomdict(abs_or_mr)
-    temps = [meanTs, meanTt, meanTe]
+    #=
+    TODO: check this isn't broken
+    =#
 
     # get the current array
-    tfile = "/home/emc/GDrive-CU/Research/Results/TradeoffPlots/Tradeoffs - solar mean/temp_$(meanTsint)_$(meanTtint)_$(meanTeint)/converged_temp_$(meanTsint)_$(meanTtint)_$(meanTeint).h5"
+    tfile = mainpath*"temp_$(meanTsint)_$(meanTtint)_$(meanTeint)/converged_temp_$(meanTsint)_$(meanTtint)_$(meanTeint).h5"
     ncur =  get_ncurrent(tfile)
-    N0 = abs_or_mr == "abs" ? 1 : n_tot(ncur, 0)
-    Ntop = abs_or_mr == "abs" ? 1 : n_tot(ncur, 250e5)
+    N0 = abs_or_mr == "abs" ? 1 : n_tot(ncur, 0, n_alt_index)
+    Ntop = abs_or_mr == "abs" ? 1 : n_tot(ncur, zmax, n_alt_index)
     LA = collect(0e5:2e5:78e5)
 
-    nomTdict = Dict("O2"=>[], "HD"=>[], "HDtop"=>[], "H2"=>[], "H"=>[], "D"=>[], "CO"=>[], 
+    nomTdict = Dict("O2"=>[], "HD"=>[], "H2"=>[], "H2MR"=>[], "H"=>[], "D"=>[], "CO"=>[], 
                      "Hflux"=>[], "Dflux"=>[], "f"=>[], "CO/O2"=>[], "O3"=>[], 
                      "DH"=>[])
     DHprofs = Array{Any}(undef, 1, length(alt)-2)
@@ -378,11 +234,10 @@ function makenomdict(abs_or_mr)
     # O2 Mixing ratio at surface
     append!(nomTdict["O2"], ncur[:O2][1]/N0)
     # HD mixing ratio
-    append!(nomTdict["HD"], ncur[:HD][1]/N0)
-    append!(nomTdict["HDtop"], ncur[:HD][end]/Ntop)
+    append!(nomTdict["HD"], ncur[:HD][end]/Ntop)
     # H2 mixing ratio
-    append!(nomTdict["H2"], sum(ncur[:H2][1:length(LA)])/sum([n_tot(ncur, h) for h in LA]))
-    # append!(nomTdict["H2"], sum(ncur[:H2][H2min:H2max]))
+    append!(nomTdict["H2MR"], sum(ncur[:H2][1:length(LA)])/sum([n_tot(ncur, h, n_alt_index) for h in LA]))
+    append!(nomTdict["H2"], ncur[:H2][end]/Ntop)
     # D Mixing ratio
     append!(nomTdict["D"], ncur[:D][end]/Ntop)
     # H mixing ratio
@@ -396,8 +251,8 @@ function makenomdict(abs_or_mr)
     # O3 mixing ratio
     append!(nomTdict["O3"], sum(ncur[:O3])*2e5) # gets O3 in #/cm^2
     # H and D fluxes
-    Hf = get_H_fluxes(tfile, 1.2e8, temps)
-    Df = get_D_fluxes(tfile, 1.2e8, temps)
+    Hf = get_flux(:H, "thermal", tfile, 1.2e8, meantemps)
+    Df = get_flux(:D, "thermal", tfile, 1.2e8, meantemps)
     append!(nomTdict["Hflux"], Hf)
     append!(nomTdict["Dflux"], Df)
     # fractionation factor 
@@ -408,7 +263,274 @@ function makenomdict(abs_or_mr)
     return nomTdict
 end
 
-# Main plotting functions ------------------------------------------------------
+# Analyzation functions (main routines) ----------------------------------------
+
+function analyze_water(abs_or_mr, allDbearers, make_plots=false, path=mainpath)
+    # Establish parameters, filenames, etc
+    wfilelist = [path*"water_"*w*"/converged_water_"*w*".h5" for w in watervals_str]
+    temps = [meanTs, meanTt, meanTe]
+    oflux = 1.2e8
+    q = abs_or_mr == "abs" ? " abundance" : " mixing ratio" # for labels
+    mean_idx = findfirst(isequal(10), watervals) - 1 
+    subfolder = abs_or_mr == "abs" ? "abs/" : "mr/"
+    
+    # Establish variables to store data on simulations
+    # Easier to deal with D/H profiles separately due to different array size
+    DHprofs = Array{Any}(undef, length(watervals), length(alt)-2)  
+    wdict = Dict{String, Array}("O2"=>[], "HD"=>[], "H2"=>[], "H2MR"=>[], "H"=>[], "D"=>[], "CO"=>[], 
+                 "Hflux"=>[], "Dflux"=>[], "f"=>[], "CO/O2"=>[], "O3"=>[], 
+                 "DH"=>[])
+    if allDbearers
+        wdict["OD"]=>[]
+        wdict["HDO2"]=>[]
+        wdict["DO2"]=>[]
+    end
+
+    # loop water files and collect data 
+    i = 1
+    for wfile in wfilelist
+        # get the current array
+        ncur = get_ncurrent(wfile)
+
+        N0 = abs_or_mr == "abs" ? 1 : n_tot(ncur, 0, n_alt_index)
+        Ntop = abs_or_mr == "abs" ? 1 : n_tot(ncur, 250e5, n_alt_index)
+        LA = collect(0e5:2e5:78e5)
+
+        # Calculate the things we care about
+        # O2 Mixing ratio at surface
+        append!(wdict["O2"], ncur[:O2][1]/N0)
+        # HD at exobase
+        append!(wdict["HD"], ncur[:HD][end]/Ntop)
+        # H2 mixing ratio in lower atmo and at exobase
+        append!(wdict["H2MR"], sum(ncur[:H2][1:length(LA)])/sum([n_tot(ncur, h, n_alt_index) for h in LA])) # ppm in lower atmo
+        append!(wdict["H2"], ncur[:H2][end]/Ntop)
+        # D at exobase
+        append!(wdict["D"], ncur[:D][end]/Ntop)
+        # H at exobase
+        append!(wdict["H"], ncur[:H][end]/Ntop)
+        # D/H at 150 km
+        append!(wdict["DH"], (ncur[:D][75]/ncur[:H][75])/(1.6e-4))
+        # CO mixing ratio at surface 
+        append!(wdict["CO"], ncur[:CO][1]/N0)
+        # CO/O2 ratio at surface
+        append!(wdict["CO/O2"], ncur[:CO][1]/ncur[:O2][1])
+        # O3 in #/cm^2, used to convert to μm-atm later
+        append!(wdict["O3"], sum(ncur[:O3])*2e5) # gets O3 in #/cm^2
+        # H and D fluxes
+        Hf = get_flux(:H, "thermal", wfile, oflux, temps)
+        Df = get_flux(:D, "thermal", wfile, oflux, temps)
+        append!(wdict["Hflux"], Hf)
+        append!(wdict["Dflux"], Df)
+        # fractionation factor 
+        append!(wdict["f"], 2*(Df/Hf) / (ncur[:HDO][1]/ncur[:H2O][1]))
+        # D/H profile
+        DHprofs[i, :] = ncur[:D] ./ ncur[:H]  # altitude profile
+        # Other D bearing species at exobase
+        if allDbearers
+            append!(wdict["OD"], ncur[:OD][end]/Ntop)
+            append!(wdict["HDO2"], ncur[:HDO2][end]/Ntop)
+            append!(wdict["DO2"], ncur[:DO2][end]/Ntop)
+        end
+        i += 1
+    end
+
+    if make_plots == true
+        make_water_plots(watervals, wdict, DHprofs, q, mean_idx, subfolder)
+    end
+
+    return wdict
+end
+
+function analyze_Oflux(abs_or_mr, allDbearers, make_plots=false, path=mainpath)
+    # Establish important parameters, files, etc
+    Ofluxvals = [8e7, 9e7, 1e8, 1.1e8, 1.2e8, 1.3e8, 1.4e8, 1.5e8, 1.6e8]
+    Ofluxvals_str = ["8e7", "9e7", "1.0e8", "1.1e8", "1.2e8", "1.3e8", "1.4e8", "1.5e8", "1.6e8"]
+    Ofilelist = [path*"Oflux_"*o*"/converged_Oflux_"*o*".h5" 
+                 for o in Ofluxvals_str]
+    temps = [meanTs, meanTt, meanTe]
+    mean_idx = findfirst(isequal(1.2e8), Ofluxvals) - 1
+    q = abs_or_mr == "abs" ? " abundance " : " mixing ratio " # set label
+    subfolder = abs_or_mr == "abs" ? "abs/" : "mr/"
+
+    # Establish variables to store data on simulations
+    odict = Dict("O2"=>[], "HD"=>[], "H2"=>[], "H2MR"=>[], "H"=>[], "D"=>[], "CO"=>[], 
+                 "Hflux"=>[], "Dflux"=>[], "f"=>[], "CO/O2"=>[], "O3"=>[], 
+                 "DH"=>[])
+    if allDbearers
+        odict["OD"]=>[]
+        odict["HDO2"]=>[]
+        odict["DO2"]=>[]
+    end
+
+    # Easier to deal with D/H profiles separately due to different array size
+    DHprofs = Array{Any}(undef, length(Ofluxvals_str), length(alt)-2)
+
+    # loop through O flux files 
+    i = 1
+    for (oflux, ofile) in zip(Ofluxvals, Ofilelist)
+        # get the current array
+        ncur = get_ncurrent(ofile)
+
+        N0 = abs_or_mr == "abs" ? 1 : n_tot(ncur, 0, n_alt_index)
+        Ntop = abs_or_mr == "abs" ? 1 : n_tot(ncur, zmax, n_alt_index)
+        LA = collect(0e5:2e5:78e5)
+
+        # Calculate the things we care about
+        # O2 Mixing ratio at surface
+        append!(odict["O2"], ncur[:O2][1]/N0)
+        # HD at exobase
+        append!(odict["HD"], ncur[:HD][end]/Ntop)
+        # H2 mixing ratio in lower atmo and at exobase
+        append!(odict["H2MR"], sum(ncur[:H2][1:length(LA)])/sum([n_tot(ncur, h, n_alt_index) for h in LA])) # ppm in lower atmo
+        append!(odict["H2"], ncur[:H2][end]/Ntop)
+        # D at exobase
+        append!(odict["D"], ncur[:D][end]/Ntop)
+        # H at exobase
+        append!(odict["H"], ncur[:H][end]/Ntop)
+        # D/H at 150 km
+        append!(odict["DH"], (ncur[:D][75]/ncur[:H][75])/(1.6e-4))
+        # CO mixing ratio at surface 
+        append!(odict["CO"], ncur[:CO][1]/N0)
+        # CO/O2 ratio at surface
+        append!(odict["CO/O2"], ncur[:CO][1]/ncur[:O2][1])
+        # O3 in #/cm^2, used to convert to μm-atm later
+        append!(odict["O3"], sum(ncur[:O3])*2e5) # gets O3 in #/cm^2
+        # H and D fluxes
+        Hf = get_flux(:H, "thermal", ofile, oflux, temps)
+        Df = get_flux(:D, "thermal", ofile, oflux, temps)
+        append!(odict["Hflux"], Hf)
+        append!(odict["Dflux"], Df)
+        # fractionation factor 
+        append!(odict["f"], 2*(Df/Hf) / (ncur[:HDO][1]/ncur[:H2O][1]))
+        # D/H profile
+        DHprofs[i, :] = ncur[:D] ./ ncur[:H]  # altitude profile
+        # Other D bearing species abundances at exobase
+        if allDbearers
+            append!(odict["OD"], ncur[:OD][end]/Ntop)
+            append!(odict["HDO2"], ncur[:HDO2][end]/Ntop)
+            append!(odict["DO2"], ncur[:DO2][end]/Ntop)
+        end
+        i += 1
+    end
+
+    if make_plots == true
+        make_Oflux_plots(Ofluxvals, Ofluxvals_str, odict, DHprofs, q, mean_idx, 
+                         subfolder)
+    end
+
+    return odict
+end
+    
+function analyze_T(abs_or_mr, allDbearers, make_plots=false, path=mainpath)
+    #=
+    abs_or_mr: whether using the absolute abundance file or mixing ratio file
+    allDbearers: whether to plot extra D-bearing species
+    make_plots: whether to generate the plots
+    path: where to save plots
+    =#
+
+    # Set up parameters, filenames, etc
+    # Dictionaries to store each experiment's data so it can be returned
+    all_tdicts = Dict()
+
+    tvals_str = Dict()
+    tempfilelist = Dict()
+    for k in keys(tvals)
+        tvals_str[k] = [string(trunc(Int, x)) for x in tvals[k]]
+        if k == "surface"
+            tempfilelist[k] = [path*"temp_"*t*"_$(meanTtint)_$(meanTeint)"*"/converged_temp_"*t*"_$(meanTtint)_$(meanTeint).h5" for t in tvals_str[k]]  # TODO: revert if necessary
+        elseif k == "tropopause"
+            tempfilelist[k] = [path*"temp_$(meanTsint)_"*t*"_$(meanTeint)"*"/converged_temp_$(meanTsint)_"*t*"_$(meanTeint).h5" for t in tvals_str[k]]
+        elseif k == "exobase"
+            tempfilelist[k] = [path*"temp_$(meanTsint)_$(meanTtint)_"*t*"/converged_temp_$(meanTsint)_$(meanTtint)_"*t*".h5" for t in tvals_str[k]]
+        end
+    end
+    meanT = Dict("surface"=>meanTs, "tropopause"=>meanTt, "exobase"=>meanTe)  # nominal 
+    oflux = 1.2e8
+    q = abs_or_mr == "abs" ? " abundance " : " mixing ratio " # set label
+    subfolder = abs_or_mr == "abs" ? "abs/" : "mr/"
+
+    # loop through which temp is varied and construct a list of datapoints
+    for experiment in keys(tvals) # loop across the dictionary
+        tdict = Dict("O2"=>[], "HD"=>[], "H2"=>[], "H2MR"=>[], "H"=>[], "D"=>[], "CO"=>[], 
+                     "Hflux"=>[], "Dflux"=>[], "f"=>[], "CO/O2"=>[], "O3"=>[], 
+                     "DH"=>[])
+        if allDbearers
+            tdict["OD"]=>[]
+            tdict["HDO2"]=>[]
+            tdict["DO2"]=>[]
+        end
+        
+        DHprofs = Array{Any}(undef, length(tvals_str[experiment]), length(alt)-2)
+
+
+        # now loop through the values for each varied temp
+        i = 1
+        for (tv, tfile) in zip(tvals[experiment], tempfilelist[experiment])
+            # set the temperature profile
+            if experiment == "surface"
+                temps = [tv, meanTt, meanTe] 
+            elseif experiment == "tropopause"
+                temps = [meanTs, tv, meanTe]
+            elseif experiment == "exobase"
+                temps = [meanTs, meanTt, tv]
+            end
+
+            # get the current array
+            ncur = get_ncurrent(tfile)
+            N0 = abs_or_mr == "abs" ? 1 : n_tot(ncur, 0, n_alt_index)
+            Ntop = abs_or_mr == "abs" ? 1 : n_tot(ncur, zmax, n_alt_index)
+            LA = collect(0e5:2e5:78e5)
+
+            # Calculate the things we care about
+            # O2 Mixing ratio at surface
+            append!(tdict["O2"], ncur[:O2][1]/N0)
+            # HD at exobase
+            append!(tdict["HD"], ncur[:HD][end]/Ntop)
+            # H2 mixing ratio in lower atmo and at exobase
+            append!(tdict["H2MR"], sum(ncur[:H2][1:length(LA)])/sum([n_tot(ncur, h, n_alt_index) for h in LA])) # ppm in lower atmo
+            append!(tdict["H2"], ncur[:H2][end]/Ntop)
+            # D at exobase
+            append!(tdict["D"], ncur[:D][end]/Ntop)
+            # H at exobase
+            append!(tdict["H"], ncur[:H][end]/Ntop)
+            # D/H at 150 km
+            append!(tdict["DH"], (ncur[:D][75]/ncur[:H][75])/(1.6e-4))
+            # CO mixing ratio at surface 
+            append!(tdict["CO"], ncur[:CO][1]/N0)
+            # CO/O2 ratio at surface
+            append!(tdict["CO/O2"], ncur[:CO][1]/ncur[:O2][1])
+            # O3 in #/cm^2, used to convert to μm-atm later
+            append!(tdict["O3"], sum(ncur[:O3])*2e5) # gets O3 in #/cm^2
+            # H and D fluxes
+            Hf = get_flux(:H, "thermal", tfile, oflux, temps)
+            Df = get_flux(:D, "thermal", tfile, oflux, temps)
+            append!(tdict["Hflux"], Hf)
+            append!(tdict["Dflux"], Df)
+            # fractionation factor 
+            append!(tdict["f"], 2*(Df/Hf) / (ncur[:HDO][1]/ncur[:H2O][1]))
+            # D/H profile
+            DHprofs[i, :] = ncur[:D] ./ ncur[:H]  # altitude profile
+            # Other D bearing species at exobase
+            if allDbearers
+                append!(tdict["OD"], ncur[:OD][end]/Ntop)
+                append!(tdict["HDO2"], ncur[:HDO2][end]/Ntop)
+                append!(tdict["DO2"], ncur[:DO2][end]/Ntop)
+            end
+            i += 1
+        end
+
+        if make_plots == true
+            make_T_plots(tvals, tvals_str, tdict, DHprofs, experiment, q, meanT, 
+                         subfolder)
+        end
+
+        all_tdicts[experiment] = tdict
+    end
+    return all_tdicts
+end
+
+# Main specific plots of various species with each parameter -------------------
 function make_water_plots(water_x, d, DHdata, q, nom_i, s)
     #=
     Makes the plots for water variation experiment
@@ -432,19 +554,15 @@ function make_water_plots(water_x, d, DHdata, q, nom_i, s)
     rcParams["xtick.labelsize"] = 22
     rcParams["ytick.labelsize"] = 22
 
-    xlab = "Water"*q*" (ppm)"
+    xlab = "Water"*q*L" (pr $\mu$m)"
 
     # Do the individual plots
-    plots = filter!(e->e∉["CO", "O2", "CO/O2", "HDtop", "OD", "DO2", "HDO2"], [k for k in keys(d)])
+    plots = filter!(e->e∉["CO", "O2", "CO/O2", "HD", "OD", "DO2", "HDO2"], [k for k in keys(d)])
     for i in plots
         # set up plot
         fig, ax = subplots(figsize=(6,4))
-        ax.set_facecolor("#ededed")
-        grid(zorder=0, color="white")
+        plot_bg(ax)
         xscale("log")
-        for side in ["top", "bottom", "left", "right"]
-            ax.spines[side].set_visible(false)
-        end
         plot(water_x, d[i], marker="o", zorder=10) 
         ax.axvline(nom_i, color="black", label="Nominal value")
 
@@ -463,13 +581,14 @@ function make_water_plots(water_x, d, DHdata, q, nom_i, s)
                         "f"=>"fractionation factor (f)",
                         "O2"=>"O"*L"_2"*q,
                         "HD"=>"HD"*q,
+                        "H2MR"=>"H"*L"_2"*q,
                         "H2"=>"H"*L"_2"*q,
                         "O3"=>L"O$_3$ (#/cm$^{-2}$)")
         ylabel(ylabdict[i])
 
         # Certain measureables have a range not suited to log scale
         nologplease = ["Dflux", "CO/O2", "DH"]  # don't logscale everything
-        if ~(i in nologplease)#maximum(odict[i])/minimum(odict[i]) > 10#
+        if ~(i in nologplease)
             yscale("log")
             if i in ["Hflux", "HD", "H", "H2", "O3", "O2"]
                 ylim(minimum(d[i])/2, maximum(d[i])*2)
@@ -477,7 +596,7 @@ function make_water_plots(water_x, d, DHdata, q, nom_i, s)
         end
 
         # set savepath
-        plotpath = lead*"water_plots/" * s
+        plotpath = mainpath*"water_plots/" * s
         savepath = "water_"*i*".png"
 
         savefig(plotpath*savepath, bbox_inches="tight")
@@ -516,15 +635,11 @@ function make_Oflux_plots(phiO, phiO_str, d, DHdata, q, nom_i, s)
     xlab = L"$\phi_O$ (cm$^{-2}$s$^{-1}$)"
 
     # Make individual plots showing change 
-    plots = filter!(e->e∉["CO", "O2", "CO/O2", "HDtop", "OD", "DO2", "HDO2"], [k for k in keys(d)])
+    plots = filter!(e->e∉["CO", "O2", "CO/O2", "HD", "OD", "DO2", "HDO2"], [k for k in keys(d)])
     for i in plots
         # basic plot stuff
         fig, ax = subplots(figsize=(6,4))
-        ax.set_facecolor("#ededed")
-        grid(zorder=0, color="white")
-        for side in ["top", "bottom", "left", "right"]
-            ax.spines[side].set_visible(false)
-        end
+        plot_bg(ax)
         plot(phiO_str, d[i], marker="o", zorder=10) 
         ax.axvline(nom_i, color="black", label="Nominal value")
 
@@ -545,6 +660,7 @@ function make_Oflux_plots(phiO, phiO_str, d, DHdata, q, nom_i, s)
                         "f"=>"fractionation factor (f)",
                         "O2"=>"O"*L"_2"*q,
                         "HD"=>"HD"*q,
+                        "H2MR"=>"H"*L"_2"*q,
                         "H2"=>"H"*L"_2"*q,
                         "O3"=>"O"*L"_3"*q)
         ylabel(ylabdict[i])
@@ -559,7 +675,7 @@ function make_Oflux_plots(phiO, phiO_str, d, DHdata, q, nom_i, s)
         end
 
         # set savepath
-        plotpath = lead*"Oflux_plots/"*s
+        plotpath = mainpath*"Oflux_plots/"*s
         savepath = plotpath*"O_flux_"*i*".png"
         
         savefig(savepath, bbox_inches="tight")
@@ -597,11 +713,11 @@ function make_T_plots(T, T_str, d, DHdata, exp, q, nomT, s)
     xlab = exp*" temperature (K)"
 
     # loop through the parameters of interest and plot them
-    plots = filter!(e->e∉["CO", "O2", "CO/O2", "HDtop", "OD", "DO2", "HDO2"], [k for k in keys(d)])
+    plots = filter!(e->e∉["CO", "O2", "CO/O2", "HD", "OD", "DO2", "HDO2"], [k for k in keys(d)])
     for i in plots
         # basic plot stuff
         fig, ax = subplots(figsize=(6,4))
-        better_plot_bg(ax)
+        plot_bg(ax)
         plot(T[exp], d[i], marker="o", zorder=10) 
         ax.axvline(nomT[exp], color="black", label="Nominal value")
         xlabel(xlab)
@@ -614,6 +730,7 @@ function make_T_plots(T, T_str, d, DHdata, exp, q, nomT, s)
                         "f"=>"fractionation factor (f)",
                         "O2"=>"O"*L"_2"*q,
                         "HD"=>"HD"*q,
+                        "H2MR"=>"H"*L"_2"*q,
                         "H2"=>"H"*L"_2"*q,
                         "O3"=>"O"*L"_3"*q)
         ylabel(ylabdict[i])
@@ -663,7 +780,7 @@ function make_T_plots(T, T_str, d, DHdata, exp, q, nomT, s)
         end
 
         # set savepath
-        plotpath = lead*"temp_plots/"*s
+        plotpath = mainpath*"temp_plots/"*s
         savepath = plotpath*join(["temp", exp], "_")*"_"*i*".png"
         savefig(savepath, bbox_inches="tight")
         close(fig)
@@ -675,7 +792,8 @@ function make_T_plots(T, T_str, d, DHdata, exp, q, nomT, s)
                      latexstring("T_{$(exp[1:3])}"))
 end
 
-function make_rel_change_plots(output_MR, output_abs, ex, SVP)
+# Make the key 'trade off' plots -----------------------------------------------
+function make_Oflux_main_plots(output_MR, output_abs)
     #=
     output_MR: 
     output_abs:
@@ -694,266 +812,69 @@ function make_rel_change_plots(output_MR, output_abs, ex, SVP)
     rcParams["xtick.labelsize"] = 22
     rcParams["ytick.labelsize"] = 22
 
-    if SVP=="const"
-        surfvals = [150.0, 160.0, 170.0, 180.0, 190.0, 200.0, 210.0, 220.0, 
-                    230.0, 240.0, 250.0, 260.0, 270.0]
-    elseif SVP=="vary"
-        surfvals = [190.0, 200.0, 210.0, 220.0, 230.0, 240.0, 250.0, 260.0, 270.0]
-    end
-    
-    # the official values of each experiment that I ran 
-    # water vals in MR: ["5e-6", "5e-5", "8e-4", "2.2e-3", "4.4e-3", "9e-3", "1.35e-2"]
-    xvals = Dict("water"=>[0.1, 1, 10, 25, 50, 100, 150],  # in pr μm, total column
-                 "O flux"=>["3e7", "4e7", "5e7", "6e7", "7e7", "8e7", "9e7", 
-                            "1.0e8", "1.1e8", "1.2e8", "1.3e8", "1.4e8", "1.5e8", 
-                            "1.6e8"],
-                 "surface"=>surfvals,
-                 "tropopause"=>[70.0, 80.0, 90.0, 100.0, 110.0, 120.0, 130.0, 
-                                140.0, 150.0, 160.0],
-                 "exobase"=>[150.0, 175.0, 200.0, 225.0, 250.0, 275.0, 
-                             300.0, 325.0, 350.0])
-
-    # something to add onto the x label for each plot
-    xlab_addn = Dict("water"=>" mixing ratio (ppm)", "O flux"=>L" (cm$^{-2}s^{-1}$)", 
-                     "surface"=>" temperature", "tropopause"=>" temperature", 
-                     "exobase"=>" temperature")
-
-    # first plot - compare with data ---------------------------------------------
+    # first plot - compare with data -------------------------------------------
     fig, ax1 = subplots(figsize=(7,6))
-  
-    # Data from MAVEN or other missions and styling to apply on all axes
-    shade = "gainsboro"
-    better_plot_bg(ax1)
-    # specific formatting by experiment type
-    if ex=="exobase"
-        ax1.set_xticks(150:25:350)
-        ax1.axvspan(150, 300, color=shade)
-    elseif ex=="tropopause"
-        ax1.axvspan(75, 160, color=shade)
-    elseif ex=="surface"
-        ax1.axvspan(180, 270, color=shade)
-    elseif ex=="O flux"
-        ax1.axvspan(5, 6, color=shade) # doubled to 8.6e7 from 4.3e7 per Mike
-        ax1.tick_params(rotation=45, axis="x")
-    elseif ex=="water"
-        # ax1.axvspan(80, 200, color="xkcd:brick red", alpha=0.3) #dust storm
-        ax1.axvspan(8, 12, color=shade) #nominal
-        # ax1.axvspan(30, 80, color="#67a9cf", alpha=0.3) # summer pole
-    end
+    plot_bg(ax1)
 
-    # nominal value plot location or index, 1-indexed for Julia
-    nom_i_julia = Dict("exobase"=>meanTe, "tropopause"=>meanTt, "surface"=>meanTs, 
-                       "O flux"=>findfirst(isequal("1.2e8"), xvals["O flux"]), 
-                       "water"=>10)
-    # Passing the values to PyPlot requires 0-indexing so here it is:
-    nom_i_py = Dict("exobase"=>meanTe, "tropopause"=>meanTt, "surface"=>meanTs, 
-                    "O flux"=>findfirst(isequal("1.2e8"), xvals["O flux"])-1, 
-                    "water"=>10)
-    
-    if ex in ["exobase", "tropopause", "surface"]
-        unit = " (K)"
-    else
-        unit = ""
-    end
-
-    ax1.set_xlabel(ex*xlab_addn[ex]*unit)
-    ax1.set_ylabel(L"(Model-Obs)/$\sigma$")
     c1 = ["#10007A", "#2F7965", "#e16262", "#D59A07"]  # just colors
-
-    # set the data for comparison. CO MR (Nair+1994), O2 MR (Nair+1994), 
-    # H2 abundance (Kras&Feldman 2001), O3 μm-atm (Clancy 2016)
-    data = [6e-4, 1.2e-3, 15, 1.18]  # CO MR, O2 MR, H2 ppm, O3 μm-atm
-    s = [1.5e-4, 0.2e-3, 5, 0.7]    # sigmas (uncertainty) on each
     
-    # here, set a dummy var to handle fact that temperature has one more index 
-    # for lookup. 
-    if ex in ["water", "O flux"]
-        MRdictvar = output_MR
-        ABSdictvar = output_abs
-    else
-        MRdictvar = output_MR[ex]
-        ABSdictvar = output_abs[ex]
-    end
-
     # calculate the relativeness of each point wrt data
-    COdiff = (MRdictvar["CO"] .- data[1])/s[1]
-    O2diff = (MRdictvar["O2"] .- data[2])/s[2]
+    COdiff = (output_MR["CO"] .- data[1])/s[1]
+    O2diff = (output_MR["O2"] .- data[2])/s[2]
     # H2diff = (ABSdictvar["H2"] .- data[3])/s[3]  # absolute abundance
-    H2diff = (MRdictvar["H2"]./1e-6 .- data[3])/s[3] # ppm
-    O3diff = (areadensity_to_micron_atm(ABSdictvar["O3"]) .- data[4])/s[4] 
+    H2diff = (output_MR["H2MR"]./1e-6 .- data[3])/s[3] # ppm
+    O3diff = (areadensity_to_micron_atm(output_abs["O3"]) .- data[4])/s[4] 
 
 
     # plot the actual stuff   
-    sz = 10
-    ax_12 = ax1.twinx()
-    ax1.plot(xvals[ex], COdiff, marker="o", ms=sz, color=c1[1], 
-               zorder=10, label="CO")
-    ax1.plot(xvals[ex], O2diff, marker="x", ms=sz, color=c1[2], 
-               zorder=10, label=L"O$_2$")
-    ax1.plot(xvals[ex], H2diff, marker="*", ms=sz, color=c1[3], 
-               zorder=10, label=L"H$_2$")
-    ax1.plot(xvals[ex], O3diff, marker="^", ms=sz, color=c1[4], 
-               zorder=10, label=L"O$_3$")
-
-    # second axis to show CO/O2
-    ax_12.plot(xvals[ex], ABSdictvar["CO"] ./ ABSdictvar["O2"], color="cornflowerblue", marker="D")
-    ax_12.plot(xvals[ex], 0.6*fill!(similar(xvals[ex]), 1), color="cornflowerblue", alpha=0.5)
-    ax_12.text(xvals[ex][end], 0.6, "0.6", ha="right", va="bottom", color="cornflowerblue")
-    ax_12.set_ylabel(L"CO/O$_2$", color="cornflowerblue")
-    ax_12.tick_params(axis="y", labelcolor="cornflowerblue", which="both")
-    for side in ["top", "bottom", "left", "right"]
-        ax_12.spines[side].set_visible(false)
-    end
-
-
-    # plot the nominal values
-    medgray = "#444444"
-    ax1.axvline(nom_i_py[ex], color=medgray, zorder=5)
+    ax1.plot(Oflux_vals, COdiff, marker="o", ms=sz, color=c1[1], zorder=10)
+    ax1.plot(Oflux_vals, O2diff, marker="x", ms=sz, color=c1[2], zorder=10)
+    ax1.plot(Oflux_vals, H2diff, marker="*", ms=sz, color=c1[3], zorder=10)
+    ax1.plot(Oflux_vals, O3diff, marker="^", ms=sz, color=c1[4], zorder=10)
+    # plot the mean values
+    ax1.axvline(nom_i_py["Oflux"], color=medgray, zorder=5)
     ax1.axhline(0, color="black")
 
     # Text on plots 
-    if ex=="exobase"
-        ax1.text(208, 5, "Nominal\ncase", color=medgray, ha="left")
-        ax1.text(150, -2.6, "CO", color=c1[1], ha="left", va="top")
-        ax1.text(170, -4.8, L"O$_2$", color=c1[2], ha="left", va="top")
-        ax1.text(160, 7, L"H$_2$", color=c1[3], ha="left", va="top")
-        ax1.text(150, -0.1, L"O$_3$", color=c1[4], ha="left", va="top")
-    elseif ex=="O flux"
-        ax1.text(8.7, 1, "Nominal\ncase", color=medgray, ha="right")
-    elseif ex=="surface"
-        ax1.text(218, 30, "Nominal\ncase", color=medgray, ha="left")
-        ax1.text(150, -5.2, "CO", color=c1[1], ha="left", va="top")
-        ax1.text(145, 25, L"O$_2$", color=c1[2], ha="left", va="top")
-        ax1.text(150, 5, L"H$_2$", color=c1[3], ha="left", va="top")
-        ax1.text(155, 45, L"O$_3$", color=c1[4], ha="left", va="top")
-        ax1.set_yticks(-10:10:50)
-        ax1.set_xticks(150:20:280)
-        ax1.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(10))
-        ax1.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(10))
-        ax1.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(5))
-    elseif ex=="tropopause"
-        ax1.text(109, 2, "Nominal\ncase", color=medgray, ha="left")
-        ax1.text(70, -3, "CO", color=c1[1], ha="left", va="top")
-        ax1.text(90, -4.2, L"O$_2$", color=c1[2], ha="left", va="top")
-        ax1.text(70, 3.2, L"H$_2$", color=c1[3], ha="left", va="top")
-        ax1.text(70, -0.5, L"O$_3$", color=c1[4], ha="left", va="top")
-        ax1.set_xticks(70:20:160)
-        ax1.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(10))
-        ax1.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(1))
-    elseif ex=="water"
-        ax1.set_xscale("log")
-        # ax1.text(81, 4, " Dust \nstorm", color="xkcd:brick red")
-        # ax1.text(25, 6.5, "Summer\n   pole", color="navy")
-        ax1.text(9, 10, "Nominal\ncase", color=medgray, ha="right")
-        ax1.text(0.2, 11, "CO", color=c1[1], ha="left", va="top")
-        ax1.text(2.5, -1, L"O$_2$", color=c1[2], ha="left", va="top")
-        ax1.text(4, 2, L"H$_2$", color=c1[3], ha="left", va="top")
-        ax1.text(0.1, 3, L"O$_3$", color=c1[4], ha="left", va="top")
-    end
-    #ax1.legend(bbox_to_anchor=(1.05, 1))
-    savefig(lead*"metrics_tradeoff_"*ex*".png", bbox_inches="tight")
+    ax1.text(8.7, 1, "Global\nmean", color=medgray, ha="right")
+
+    ax1.set_xlabel(L"\Phi_O"*L" (cm$^{-2}s^{-1}$)")
+    ax1.set_ylabel(L"($X_{model}$-$X_{obs}$)/$\sigma$")
+    savefig(mainpath*"output_vs_data_oflux.png", bbox_inches="tight")
 
 
     # second plot: H2, HD, H, D, Hflux, Dflux ----------------------------------
     fig, ax2 = subplots(figsize=(7,6))
-   
-    # Data from MAVEN or other missions and styling to apply on all axes
-    shade = "gainsboro"
-    better_plot_bg(ax2)
-    # specific formatting by experiment type
-    if ex=="exobase"
-        ax2.set_xticks(150:25:350)
-        ax2.axvspan(150, 300, color=shade)
-    elseif ex=="tropopause"
-        ax2.axvspan(75, 160, color=shade)
-    elseif ex=="surface"
-        ax2.axvspan(180, 270, color=shade)
-    elseif ex=="O flux"
-        ax2.axvspan(5, 6, color=shade) # doubled to 8.6e7 from 4.3e7 per Mike
-        ax2.tick_params(rotation=45, axis="x")
-    elseif ex=="water"
-        # ax2.axvspan(80, 200, color="xkcd:brick red", alpha=0.3) #dust storm
-        ax2.axvspan(8, 12, color=shade) #nominal
-        # ax2.axvspan(30, 80, color="#67a9cf", alpha=0.3) # summer pole
-    end
 
-    ax2.set_ylabel(L"X/X$_{nominal}$")
-    c2 = ["#6270d9","#95b034","#d14f58","#5ca85c","#ce6d30"]
+    c2 = ["#6270d9","#95b034","#d14f58","#5ca85c","#ce6d30", "#0d186d"]
 
     # to do the division/normalization we need to re-find the index of the value
     # against which to normalize. To do this, look in the xvals by experiment, 
     # then index that according to whether we cut it or not. There doesn't seem 
     # to be a cleaner way to do the indexing of cut.
-    normidx = Dict("exobase"=>findfirst(isequal(meanTe), xvals["exobase"][1:1:length(xvals["exobase"])]), 
-                   "tropopause"=>findfirst(isequal(meanTt), xvals["tropopause"][1:1:length(xvals["tropopause"])]), 
-                   "surface"=>findfirst(isequal(meanTs), xvals["surface"][1:1:length(xvals["surface"])]),
-                   "water"=>findfirst(isequal(10), xvals["water"][1:1:length(xvals["water"])]),
-                   "O flux"=>findfirst(isequal("1.2e8"), xvals["O flux"][1:1:length(xvals["O flux"])]))
-
-    if ex in ["water", "O flux"]
-        HDdiff = normalize(MRdictvar["HD"], normidx[ex])
-        Hdiff = normalize(MRdictvar["H"], normidx[ex])
-        Ddiff = normalize(MRdictvar["D"], normidx[ex])
-        Hfdiff = normalize(MRdictvar["Hflux"], normidx[ex])
-        Dfdiff = normalize(MRdictvar["Dflux"], normidx[ex])
-    else
-        nomdict = makenomdict("mr") # get info for nom case which has values not % by 10
-        HDdiff = normalize_val(MRdictvar["HD"], nomdict["HD"])
-        Hdiff = normalize_val(MRdictvar["H"], nomdict["H"])
-        Ddiff = normalize_val(MRdictvar["D"], nomdict["D"])
-        Hfdiff = normalize_val(MRdictvar["Hflux"], nomdict["Hflux"])
-        Dfdiff = normalize_val(MRdictvar["Dflux"], nomdict["Dflux"])
-    end
+    normidx = findfirst(isequal("1.2e8"), Oflux_vals[1:1:length(Oflux_vals)])
+    
+    HDdiff = normalize(output_MR["HD"], normidx)
+    H2diff = normalize(output_MR["H2"], normidx)
+    Hdiff = normalize(output_MR["H"], normidx)
+    Ddiff = normalize(output_MR["D"], normidx)
+    Hfdiff = normalize(output_MR["Hflux"], normidx)
+    Dfdiff = normalize(output_MR["Dflux"], normidx)
 
     # plot the actual stuff
-    ax2.plot(xvals[ex], HDdiff, marker="o", ms=sz, color=c2[1], zorder=10, label="HD")
-    ax2.plot(xvals[ex], Hdiff, marker="x", ms=sz, color=c2[2], zorder=10, label="H")
-    ax2.plot(xvals[ex], Ddiff, marker="*", ms=sz, color=c2[3], zorder=10, label="D")
-    ax2.plot(xvals[ex], Hfdiff, marker="^", ms=sz, color=c2[4], zorder=10, label=L"\phi_H")
-    ax2.plot(xvals[ex], Dfdiff, marker="D", ms=sz, color=c2[5], zorder=10, label=L"\phi_D")
+    ax2.plot(Oflux_vals, Hdiff, marker="x", ms=sz,  color=c2[2], zorder=10, label="H")
+    ax2.plot(Oflux_vals, Ddiff, marker="*", ms=sz,  color=c2[5], zorder=10, label="D")
+    ax2.plot(Oflux_vals, H2diff, marker="o", ms=sz, color=c2[1], zorder=10, label="H2")
+    ax2.plot(Oflux_vals, HDdiff, marker="o", ms=sz, color=c2[6], zorder=10, label="HD")
+    ax2.plot(Oflux_vals, Hfdiff, marker="^", ms=sz, color=c2[4], zorder=10, label=L"\phi_H")
+    ax2.plot(Oflux_vals, Dfdiff, marker="D", ms=sz, color=c2[3], zorder=10, label=L"\phi_D")
+    # nominal value
+    ax2.axvline(nom_i_py["Oflux"], color=medgray, zorder=5)
+    ax2.axhline(1, color=medgray, zorder=5)
 
     # Text on plots 
-    if ex=="exobase"
-        ax2.text(208, 100, "Nominal\ncase", color=medgray, ha="left", va="top")
-        ax2.text(150, 5, "HD", color=c2[1], ha="left", va="top")
-        ax2.text(175, 3, "H", color=c2[2], ha="left", va="top")
-        ax2.text(150, 0.4, "D", color=c2[3], ha="left", va="top")
-        ax2.text(325, 2, L"$\phi_H$", color=c2[4], ha="left", va="top")
-        ax2.text(150, 0.15, L"$\phi_D$", color=c2[5], ha="left", va="top")
-    # elseif ex=="O flux"
-    #     ax2.text(8.7, 1, "Nominal\ncase", color=medgray, ha="right")
-    elseif ex=="surface"
-        ax2.text(219, 1.6, "Nominal\ncase", color=medgray, ha="left", va="top")
-        ax2.text(155, 0.6, "HD", color=c2[1], ha="left", va="top")
-        ax2.text(147, 1.35, "H", color=c2[2], ha="left", va="top")
-        ax2.text(155, 1.6, "D", color=c2[3], ha="left", va="top")
-        ax2.text(255, 0.95, L"$\phi_H$", color=c2[4], ha="left", va="top")
-        ax2.text(255, 1.2, L"$\phi_D$", color=c2[5], ha="left", va="top")
-        ax2.set_xticks(150:20:280)
-        ax2.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(10))
-        # ax2.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(10))
-        # ax2.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(5))
-    elseif ex=="tropopause"
-        ax2.text(110, 3.25, "Nominal\ncase", color=medgray, ha="left", va="top")
-        ax2.text(70, 2.05, "HD", color=c2[1], ha="left", va="top")
-        ax2.text(70, 1.3, "H", color=c2[2], ha="left", va="top")
-        ax2.text(70, 0.8, "D", color=c2[3], ha="left", va="top")
-        ax2.text(150, 1.25, L"$\phi_H$", color=c2[4], ha="left", va="top")
-        ax2.text(70, 0.4, L"$\phi_D$", color=c2[5], ha="left", va="top")
-        ax1.set_xticks(70:20:160)
-        ax1.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(10))
-        ax1.yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(1))
-    elseif ex=="water"
-        ax2.set_xscale("log")
-        ax2.text(11, 0.9, "Nominal\ncase", color=medgray, ha="left", va="top")
-        ax2.text(30, 0.965, "HD", color=c2[1], ha="left", va="top")
-        ax2.text(0.1, 0.982, "H", color=c2[2], ha="left", va="top")
-        ax2.text(0.1, 0.91, "D", color=c2[3], ha="left", va="top")
-        ax2.text(30, 0.995, L"$\phi_H$", color=c2[4], ha="left", va="top")
-        ax2.text(0.12, 0.95, L"$\phi_D$", color=c2[5], ha="left", va="top")
-    end
-
-
+    ax2.text(8.7, 1, "Global\nmean", color=medgray, ha="right")
+    
     # Other species that can be plotted, or species at other locations
     # HDtopdiff = normalize(MRdictvar["HDtop"], normidx[ex])
     # ODtopdiff = normalize(MRdictvar["HDtop"], normidx[ex])
@@ -964,452 +885,554 @@ function make_rel_change_plots(output_MR, output_abs, ex, SVP)
     # ax2.plot(xvals[ex], HDO2topdiff, marker="o", color="blue", zorder=10)
     # ax2.plot(xvals[ex], DO2topdiff, marker="o", color="purple", zorder=10)
 
-    # nominal value
-    ax2.axvline(nom_i_py[ex], color=medgray, zorder=5)
-    ax2.axhline(1, color=medgray, zorder=5)
-    
-    if ex in ["exobase", "tropopause", "surface"]
-        unit = " (K)"
-        if ex=="exobase"
-            ax2.set_yscale("log")
-        end
-    else
-        unit = ""
-    end
-    ax2.set_xlabel(ex*xlab_addn[ex]*unit)
+    ax2.set_xlabel(L"\Phi_O"*L" (cm$^{-2}s^{-1}$)")
+    ax2.set_ylabel(L"X/X$_{nominal}$")
     #ax2.legend(bbox_to_anchor=(1.05, 1))
-    savefig(lead*"compare_nominal_"*ex*".png", bbox_inches="tight")
+    savefig(mainpath*"compare_nominal_Oflux.png", bbox_inches="tight")
 
-
-    # third plot: f ------------------------------------------------------------
+    # # third plot: f ----------------------------------------------------------
+    # only for water and O flux - the others are done in a panel
     fig, ax = subplots(figsize=(7,6))
-  
-    # Data from MAVEN or other missions and styling to apply on all axes
-    shade = "gainsboro"
-    better_plot_bg(ax)
-    # specific formatting by experiment type
-    if ex=="exobase"
-        ax.set_xticks(150:25:350)
-        ax.axvspan(150, 300, color=shade)
-        ax.text(203, 0.01, "Nominal\ncase", color=medgray, ha="right")
-    elseif ex=="tropopause"
-        ax.axvspan(75, 160, color=shade)
-        ax.text(110, 0.005, "Nominal\ncase", color=medgray, ha="left")
-    elseif ex=="surface"
-        ax.set_xticks(150:20:270)
-        ax.axvspan(180, 270, color=shade)
-        ax.text(218, 2.5e-3 , "Nominal\ncase", color=medgray)
-        ax.grid(zorder=0, color="white", which="both")
-    elseif ex=="O flux"
-        ax.axvspan(5, 6, color=shade) # doubled to 8.6e7 from 4.3e7 per Mike
-        ax.tick_params(rotation=45, axis="x")
-        ax.text(8.7, 0.00112, "Nominal\ncase", color=medgray, ha="right")
-    elseif ex=="water"
-        # ax.axvspan(80, 200, color="xkcd:brick red", alpha=0.3) #dust storm
-        ax.axvspan(8, 12, color=shade) #nominal
-        # ax.axvspan(30, 80, color="#67a9cf", alpha=0.3) # summer pole
-        ax.text(9, 0.00095, "Nominal\ncase", color=medgray, ha="right", va="top")
-        # ax.text(50, 0.001025, "Summer\npole", color="navy", ha="center", va="top")
-        # ax.text(150, 0.001, "Dust\nstorm", color="xkcd:brick red", ha="center", va="top")
-        ax.set_xscale("log")
-    end
+    plot_bg(ax)
+
+    ax.tick_params(rotation=45, axis="x")
+    ax.text(8.7, 0.00112, "Global\nmean", color=medgray, ha="right")
+
 
     ax.set_ylabel(L"$f$", color="black")
-    ax.set_xlabel(ex*xlab_addn[ex])
-    if ex in ["water", "Oflux"]
-        linecol = "cornflowerblue"
+    ax.set_xlabel(L"\Phi_O"*L" (cm$^{-2}s^{-1}$)")
+    linecol = "cornflowerblue"
+
+    ax.plot(Oflux_vals, output_MR["f"], marker="o", color=linecol, zorder=10)
+    ax.axvline(nom_i_py["Oflux"], color=medgray, zorder=5)
+
+        
+    savefig(mainpath*"f_tradeoff_Oflux.png", bbox_inches="tight")
+end
+
+# Water plots ------------------------------------------
+function make_water_Hspecies_plot(output_dict, abs_or_mr)
+    ############################################################
+    #=
+    Plot showing H, D, HD, H2, ΦH and ΦD as relative to the global mean profile
+    =#
+
+    # to do the division/normalization we need to re-find the index of the value
+    # against which to normalize. To do this, look in the xvals by experiment, 
+    # then index that according to whether we cut it or not. There doesn't seem 
+    # to be a cleaner way to do the indexing of cut.
+    normidx = findfirst(isequal(10), watervals[1:1:length(watervals)])
+    
+    # make plots pretty
+    rcParams = PyDict(matplotlib."rcParams")
+    rcParams["font.family"] = "sans-serif"
+    rcParams["font.sans-serif"] = ["Louis George Caf?"]
+    rcParams["font.monospace"] = ["FreeMono"]
+    rcParams["font.size"] = 22
+    rcParams["axes.labelsize"]= 24
+    rcParams["xtick.labelsize"] = 22
+    rcParams["ytick.labelsize"] = 22
+
+    # Make the plot 
+    fig, ax = subplots(figsize=(7,6))
+    plot_bg(ax)
+    
+    HDdiff = normalize(output_dict["HD"], normidx)
+    H2diff = normalize(output_dict["H2"], normidx)
+    Hdiff = normalize(output_dict["H"], normidx)
+    Ddiff = normalize(output_dict["D"], normidx)
+    Hfdiff = normalize(output_dict["Hflux"], normidx)
+    Dfdiff = normalize(output_dict["Dflux"], normidx)
+
+    # plot the actual stuff
+
+    # colors for each line
+    c = ["#95b034", "#ce6d30", "#6270d9", "#0d186d", "#5ca85c", "#d14f58"]
+
+    ax.plot(watervals, Hdiff, marker="x", ms=sz,  color=c[1], zorder=10, label="H")
+    ax.plot(watervals, Ddiff, marker="*", ms=sz+10,  color=c[2], zorder=10, 
+            label="D", alpha=0.7)
+
+    ax.plot(watervals, H2diff, marker="o", ms=sz, color=c[3], zorder=10, label="H2")
+    ax.plot(watervals, HDdiff, marker="D", ms=sz, color=c[4], zorder=10, 
+            label="HD", alpha=0.7)
+    
+    ax.plot(watervals, Hfdiff, marker="^", ms=sz, color=c[5], zorder=10, label=L"\phi_H")
+    ax.plot(watervals, Dfdiff, marker="v", ms=sz, color=c[6], zorder=10, 
+            label=L"\phi_D", alpha=0.7)
+    # nominal value
+    ax.axvline(nom_i_py["water"], color=medgray, zorder=5)
+    ax.axhline(1, color=medgray, zorder=5)
+
+    # Text on plots 
+    ax.set_xscale("log")
+    ax.text(11, 0.9, "Global\nmean", color=medgray, ha="left", va="top")
+    ax.text(1, 0.99, "H", color=c[1], ha="left", va="top")
+    ax.text(1, 0.87, "D", color=c[2], ha="left", va="top")
+    ax.text(1, 1.02, L"H_2", color=c[3], ha="left", va="top")
+    ax.text(2, 0.85, "HD", color=c[4], ha="left", va="top")
+    ax.text(1.5, 0.995, L"$\phi_H$", color=c[5], ha="left", va="top")
+    ax.text(1.5, 0.9, L"$\phi_D$", color=c[6], ha="left", va="top")
+  
+    # Other species that can be plotted, or species at other locations
+    # HDtopdiff = normalize(MRdictvar["HDtop"], normidx[ex])
+    # ODtopdiff = normalize(MRdictvar["HDtop"], normidx[ex])
+    # HDO2topdiff = normalize(MRdictvar["HDtop"], normidx[ex])
+    # DO2topdiff = normalize(MRdictvar["HDtop"], normidx[ex])
+    # ax2.plot(xvals[ex], HDtopdiff, marker="o", color="#7D3403", zorder=10)
+    # ax2.plot(xvals[ex], ODtopdiff, marker="o", color="red", zorder=10)
+    # ax2.plot(xvals[ex], HDO2topdiff, marker="o", color="blue", zorder=10)
+    # ax2.plot(xvals[ex], DO2topdiff, marker="o", color="purple", zorder=10)
+
+    ax.set_xlabel(L"total atmospheric water (pr $\mu$m)")
+    ax.set_ylabel(L"X/X(\overline{T}_{global})")
+    savefig(mainpath*"compare_nominal_water_"*abs_or_mr*".png", bbox_inches="tight")
+end
+
+function make_water_output_vs_data(output_MR, output_abs)
+    #=TODO: Fill me in=#
+    rcParams = PyDict(matplotlib."rcParams")
+    rcParams["font.family"] = "sans-serif"
+    rcParams["font.sans-serif"] = ["Louis George Caf?"]
+    rcParams["font.monospace"] = ["FreeMono"]
+    rcParams["font.size"] = 22
+    rcParams["axes.labelsize"]= 24
+    rcParams["xtick.labelsize"] = 22
+    rcParams["ytick.labelsize"] = 22
+
+
+    # first plot - compare with data -------------------------------------------
+    fig, ax = subplots(figsize=(7,6))
+    plot_bg(ax)
+
+    c1 = ["#10007A", "#2F7965", "#e16262", "#D59A07"]  # just colors
+    medgray = "#444444"
+    
+    # calculate the relativeness of each point wrt data
+    COdiff = (output_MR["CO"] .- data[1])/s[1]
+    O2diff = (output_MR["O2"] .- data[2])/s[2]
+    # H2diff = (ABSdictvar["H2"] .- data[3])/s[3]  # absolute abundance
+    H2diff = (output_MR["H2MR"]./1e-6 .- data[3])/s[3] # ppm
+    O3diff = (areadensity_to_micron_atm(output_abs["O3"]) .- data[4])/s[4] 
+
+    # plot the actual stuff   
+    ax.plot(watervals, COdiff, marker="o", ms=sz, color=c1[1], zorder=10)
+    ax.plot(watervals, O2diff, marker="x", ms=sz, color=c1[2], zorder=10)
+    ax.plot(watervals, H2diff, marker="*", ms=sz, color=c1[3], zorder=10)
+    ax.plot(watervals, O3diff, marker="^", ms=sz, color=c1[4], zorder=10)
+    # plot the mean values
+    ax.axvline(nom_i_py["water"], color=medgray, zorder=5)
+    ax.axhline(0, color="black")
+
+    # Text on plots 
+    ax.set_xscale("log")
+    ax.text(10.2, 2.5, "Global\nmean", color=medgray, ha="left", va="top")
+    ax.text(1, -2.4, "CO", color=c1[1], ha="left", va="top")
+    ax.text(20, -2.5, L"O$_2$", color=c1[2], ha="left", va="top")
+    ax.text(1, -0.5, L"H$_2$", color=c1[3], ha="left", va="top")
+    ax.text(1, 2.5, L"O$_3$", color=c1[4], ha="left", va="top")
+    ax.set_xlabel(L"total atmospheric water (pr $\mu$m)")
+    ax.set_ylabel(L"($X_{model}$-$X_{obs}$)/$\sigma$")
+    savefig(mainpath*"output_vs_data_water.png", bbox_inches="tight")
+end
+
+function make_water_f_plot(output_MR)
+    #=f as a function of water vapor=#
+    fig, ax = subplots(figsize=(7,6))
+    plot_bg(ax)
+    # make plots pretty
+    rcParams = PyDict(matplotlib."rcParams")
+    rcParams["font.family"] = "sans-serif"
+    rcParams["font.sans-serif"] = ["Louis George Caf?"]
+    rcParams["font.monospace"] = ["FreeMono"]
+    rcParams["font.size"] = 22
+    rcParams["axes.labelsize"]= 24
+    rcParams["xtick.labelsize"] = 22
+    rcParams["ytick.labelsize"] = 22
+
+
+    ax.plot(watervals, output_MR["f"], marker="o", color="cornflowerblue", zorder=10)
+    ax.axvline(nom_i_py["water"], color=medgray, zorder=5)
+
+    ax.text(9, 0.0019, "Global\nmean", color=medgray, ha="right", va="bottom")
+    ax.set_xscale("log")
+
+    ax.set_ylabel(L"$f$", color="black")
+    ax.set_xlabel(L"total atmospheric water (pr $\mu$m)")
+    
+    savefig(mainpath*"f_vs_water.png", bbox_inches="tight")
+end
+
+# Temp plots -------------------------------------------
+function make_T_Hspecies_plot(output_dict, abs_or_mr)
+    #=
+    Plot showing H, D, HD, H2, ΦH and ΦD as relative to the global mean profile
+    =#
+
+    # where to place text, basically.
+    exps = ["surface", "tropopause", "exobase"]
+    gmean_txt_loc = Dict("surface"=>[219, 1.4], "tropopause"=>[132, 1.9], 
+                         "exobase"=>[208, 100])
+    # ylims = Dict("surface"=>[-10, 190], "tropopause"=>[-4, 4.2], "exobase"=>[-4, 4.2])
+    xt_args = Dict("surface"=>150:20:280, "tropopause"=>100:10:160, 
+                   "exobase"=>150:50:350)
+    if abs_or_mr == "mr"
+        linelbls = DataFrame(Exp=["surface", "tropopause", "exobase"], 
+                              H=[[150, 1.8],     [100, 2.4],  [150, 10]], 
+                              D=[[260, 0.5],     [100, 1.5],  [340, 0.1]],
+                              H2=[[190, 2],      [105, 3.2], [150, 2.2]],
+                              HD=[[150, 1.5],    [100, 2.9], [340, 0.8]],
+                              fluxH=[[150, 1],  [100, 0.9], [340, 2.2]],
+                              fluxD=[[150, 0.7], [100, 0.4],  [155, 0.4]])
     else
-        linecol = "black"
+        linelbls = DataFrame(Exp=["surface", "tropopause", "exobase"], 
+                              H=[[150, 1.15],   [150, 1.15],  [150, 20]], 
+                              D=[[175, 0.75],   [108, 0.8],  [340, 0.3]],
+                              H2=[[195, 1.4],   [100, 1.45], [150, 5]],
+                              HD=[[165, 1.25],  [100, 1.15], [340, 2]],
+                              fluxH=[[150, 1],  [155, 1.2], [150, 0.8]],
+                              fluxD=[[160, 0.7], [100, 0.7],  [145, 0.1]])
     end
-    ax.plot(xvals[ex], MRdictvar["f"], marker="o", color=linecol, zorder=10)
-    ax.axvline(nom_i_py[ex], color=medgray, zorder=5)
 
-    ylims = Dict("tropopause"=>[1e-4, 1e-2],
-                 "exobase"=>[1e-5, 2e-1],
-                 "surface"=>[1e-3, 3e-3])
+     # colors for each 
+    c = ["#95b034", "#ce6d30", "#6270d9", "#0d186d", "#5ca85c", "#d14f58"]
+    # to do the division/normalization we need to re-find the index of the value
+    # against which to normalize. To do this, look in the xvals by experiment, 
+    # then index that according to whether we cut it or not. There doesn't seem 
+    # to be a cleaner way to do the indexing of cut.
+    normidx = Dict("exobase"=>findfirst(isequal(meanTe), tvals["exobase"][1:1:length(tvals["exobase"])]), 
+                   "tropopause"=>findfirst(isequal(meanTt), tvals["tropopause"][1:1:length(tvals["tropopause"])]), 
+                   "surface"=>findfirst(isequal(meanTs), tvals["surface"][1:1:length(tvals["surface"])]),
+                   )
+    nomdict = makenomdict(abs_or_mr) # get info for nom case which has values not % by 10
+    
+    # make plots pretty
+    rcParams = PyDict(matplotlib."rcParams")
+    rcParams["font.family"] = "sans-serif"
+    rcParams["font.sans-serif"] = ["Louis George Caf?"]
+    rcParams["font.monospace"] = ["FreeMono"]
+    rcParams["font.size"] = 22
+    rcParams["axes.labelsize"]= 24
+    rcParams["xtick.labelsize"] = 22
+    rcParams["ytick.labelsize"] = 22
 
-    if ex in ["exobase", "tropopause", "surface"]  # in these cases, we'll have 2 axes.
-        # some adjustments to the main axes, which shows raw value
-        ax.set_yscale("log") 
-        ax.set_ylim(ylims[ex][1], ylims[ex][2])
-        ax.set_xlabel(ex*xlab_addn[ex]*" (K)")
+    # Make the plot 
+    fig, ax = subplots(1, 3, sharex=false, sharey=false, figsize=(21, 5))
+    subplots_adjust(wspace=0.3)
+    
+
+    for i in 1:3
+        plot_bg(ax[i])
+        ex = exps[i]
+        
+        Hdiff = normalize_val(output_dict[ex]["H"], nomdict["H"])
+        Ddiff = normalize_val(output_dict[ex]["D"], nomdict["D"])
+        H2diff = normalize_val(output_dict[ex]["H2"], nomdict["H2"])
+        HDdiff = normalize_val(output_dict[ex]["HD"], nomdict["HD"])       
+        Hfdiff = normalize_val(output_dict[ex]["Hflux"], nomdict["Hflux"])
+        Dfdiff = normalize_val(output_dict[ex]["Dflux"], nomdict["Dflux"])
+
+        # plot the actual stuff
+        ax[i].plot(tvals[ex], Hdiff, marker="x", ms=sz, color=c[1], zorder=10, label="H")
+        ax[i].plot(tvals[ex], Ddiff, marker="*", ms=sz, color=c[2], zorder=10, label="D")
+        ax[i].plot(tvals[ex], H2diff, marker="o", ms=sz, color=c[3], zorder=10, label="H2")
+        ax[i].plot(tvals[ex], HDdiff, marker="D", ms=sz, color=c[4], zorder=10, label="HD")
+        ax[i].plot(tvals[ex], Hfdiff, marker="^", ms=sz, color=c[5], zorder=10, label=L"\phi_H")
+        ax[i].plot(tvals[ex], Dfdiff, marker="v", ms=sz, color=c[6], zorder=10, label=L"\phi_D")
+        # nominal value
+        ax[i].axvline(nom_i_py[ex], color=medgray, zorder=5)
+        ax[i].text(gmean_txt_loc[ex][1], gmean_txt_loc[ex][2], "Global\nmean", 
+                   color=medgray, ha="left", va="top")
+        ax[i].axhline(1, color=medgray, zorder=5)
+
+        # text on plots
+        dfentry = linelbls[linelbls.Exp.==ex, :]
+        ax[i].text(dfentry.H[1][1], dfentry.H[1][2], "H", color=c[1], ha="left", va="top")
+        ax[i].text(dfentry.D[1][1], dfentry.D[1][2], "D", color=c[2], ha="left", va="top")
+        ax[i].text(dfentry.H2[1][1], dfentry.H2[1][2], "H2", color=c[3], ha="left", va="top")
+        ax[i].text(dfentry.HD[1][1], dfentry.HD[1][2], "HD", color=c[4], ha="left", va="top")
+        ax[i].text(dfentry.fluxH[1][1], dfentry.fluxH[1][2], L"\phi_H", color=c[5], ha="left", va="top")
+        ax[i].text(dfentry.fluxD[1][1], dfentry.fluxD[1][2], L"\phi_D", color=c[6], ha="left", va="top")
+
+
+        # Various configurations and such 
+        if ex=="surface"
+            ax[i].xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(20))
+            ax[i].xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(10))
+        elseif ex=="tropopause"
+            ax[i].xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(10))
+            # ax[i].yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(1))
+        elseif ex=="exobase"
+            ax[i].set_yscale("log")
+        end
+
+        ax[i].set_xlabel(ex*" temperature (K)")
+    end
+    ax[1].set_ylabel(L"X/X(\overline{T}_{global})")
+    ax[1].text(150, 1.4, "a", color="black", weight="bold", va="top", 
+               ha="center", fontsize=26)#
+    ax[2].text(100, 1.9, "b", color="black", weight="bold", va="top", 
+               ha="center", fontsize=26)
+    ax[3].text(150, 100, "c", color="black", weight="bold", va="top", 
+               ha="center", fontsize=26)
+
+    # Other species that can be plotted, or species at other locations
+    # HDtopdiff = normalize(MRdictvar["HDtop"], normidx[ex])
+    # ODtopdiff = normalize(MRdictvar["HDtop"], normidx[ex])
+    # HDO2topdiff = normalize(MRdictvar["HDtop"], normidx[ex])
+    # DO2topdiff = normalize(MRdictvar["HDtop"], normidx[ex])
+    # ax.plot(xvals[ex], HDtopdiff, marker="o", color="#7D3403", zorder=10)
+    # ax.plot(xvals[ex], ODtopdiff, marker="o", color="red", zorder=10)
+    # ax.plot(xvals[ex], HDO2topdiff, marker="o", color="blue", zorder=10)
+    # ax.plot(xvals[ex], DO2topdiff, marker="o", color="purple", zorder=10)
+    
+    savefig(mainpath*"compare_nominal_temps_"*abs_or_mr*".png", bbox_inches="tight")
+end
+
+function make_T_f_plot(output_MR)
+    #=
+    makes a 3-panel plot of the tradeoff of f. 
+    =#
+
+    maincol = "#574D9D"
+    secondcol = "#588C54"
+    # make plots pretty
+    rcParams = PyDict(matplotlib."rcParams")
+    rcParams["font.family"] = "sans-serif"
+    rcParams["font.sans-serif"] = ["Louis George Caf?"]
+    rcParams["font.monospace"] = ["FreeMono"]
+    rcParams["font.size"] = 22
+    rcParams["axes.labelsize"]= 24
+    rcParams["xtick.labelsize"] = 22
+    rcParams["ytick.labelsize"] = 22
+
+    # Dictionaries for where to put things for each experiment 
+    exps = ["surface", "tropopause", "exobase"]
+    gmean_txt_loc = Dict("surface"=>[218, 1], "tropopause"=>[132, 1], "exobase"=>[208, 1])
+    xt_args = Dict("surface"=>[150, 20, 275], "tropopause"=>[70, 30, 165], "exobase"=>[150, 50, 350])
+    nom_i_py = Dict("exobase"=>meanTe, "tropopause"=>meanTt, "surface"=>meanTs)
+    ylims = Dict("tropopause"=>[1e-5, 1e0], "exobase"=>[1e-5, 1e0], "surface"=>[1e-5, 1e0])
+    mmin = Dict("exobase"=>25, "tropopause"=>10, "surface"=>10)
+    mmaj = Dict("exobase"=>50, "tropopause"=>30, "surface"=>20)
+
+    # Make the figure 
+    fig, ax = subplots(1, 3, sharex=false, sharey=false, figsize=(21, 5))
+    subplots_adjust(wspace=0.3)
+    
+    for i in 1:3
+        plot_bg(ax[i])
+        ex = exps[i]
+
+        # plot
+        ax[i].plot(tvals[ex], output_MR[ex]["f"], marker="o", color=maincol, zorder=10)
+        ax[i].axvline(nom_i_py[ex], color=medgray, zorder=5)
+        ax[i].text(gmean_txt_loc[ex][1], gmean_txt_loc[ex][2], "Global\nmean", 
+                   color=medgray, ha="left", va="top")
+
+        # axis format
+        mpltic = pyimport("matplotlib.ticker")
+        ax[i].set_xlabel(ex*" temperature (K)", fontsize=24)
+        ax[i].xaxis.set_major_locator(mpltic.MultipleLocator(mmaj[ex]))
+        ax[i].xaxis.set_minor_locator(mpltic.MultipleLocator(mmin[ex]))
+        ax[i].set_xticks(xt_args[ex][1]:xt_args[ex][2]:xt_args[ex][3], minor=false)
+        ax[i].tick_params(axis="y", labelcolor=maincol, which="both")
+        ax[i].tick_params(axis="x", which="both")
+        # setp(ax.get_xticklabels(), fontsize=22)
+
+        ax[i].set_yscale("log") 
+        ax[i].set_ylim(ylims[ex][1], ylims[ex][2])
+        ax[i].set_yticks([1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1])
+        # setp(ax.get_yticklabels(), fontsize=22)
 
         # plot the secondary axis showing increase
-        fdiff = normalize_val(MRdictvar["f"], nomdict["f"])
-        ax_2 = ax.twinx()
-        ax_2.plot(xvals[ex], fdiff, marker="o", color="xkcd:vivid purple")
-        ax_2.set_ylabel(L"$f$/$f_{nominal}$", color="xkcd:vivid purple")
-        ax_2.tick_params(axis="y", labelcolor="xkcd:vivid purple", which="both")
+        nomdict = makenomdict("mr")
+        fdiff = normalize_val(output_MR[ex]["f"], nomdict["f"])
+        ax_2 = ax[i].twinx()
+        if i==3
+            ax_2.set_ylabel(L"$f$/$f(\overline{T}_{global})$", color=secondcol, fontsize=24)
+        end
+        ax_2.plot(tvals[ex], fdiff, marker="o", color=secondcol)
+        ax_2.tick_params(axis="y", labelcolor=secondcol, which="both")
         for side in ["top", "bottom", "left", "right"]
             ax_2.spines[side].set_visible(false)
         end
     end
+
+
     
-    savefig(lead*"f_tradeoff_"*ex*".png", bbox_inches="tight")
+    ax[1].set_ylabel(L"Fractionation factor $f$", color=maincol, fontsize=24) 
+    ax[1].text(150, 1, "a", color="black", fontsize=26, weight="bold", va="top")
+    ax[2].text(100, 1, "b", color="black", fontsize=26, weight="bold", va="top")
+    ax[3].text(150, 1, "c", color="black", fontsize=26, weight="bold", va="top")
+
+
+    savefig(mainpath*"f_vs_temps.png", bbox_inches="tight")
 end
 
-# Analyzation functions (main routines) ----------------------------------------
-
-function analyze_water(abs_or_mr, allDbearers, make_plots=false, path=lead)
-    # Establish parameters, filenames, etc
-    watervals = [0.1, 1, 10, 25, 50, 100, 150]
-    watervals_str = ["1.48e-6", "2.1e-5", "8.1e-4", "2.18e-3", "4.46e-3", "9.02e-3", "1.358e-2"]
-    wfilelist = [path*"water_"*w*"/converged_water_"*w*".h5" for w in watervals_str]
-    temps = [meanTs, meanTt, meanTe]
-    oflux = 1.2e8
-    q = abs_or_mr == "abs" ? " abundance" : " mixing ratio" # for labels
-    mean_idx = findfirst(isequal(10), watervals) - 1 
-    subfolder = abs_or_mr == "abs" ? "abs/" : "mr/"
-    
-    # Establish variables to store data on simulations
-    # Easier to deal with D/H profiles separately due to different array size
-    DHprofs = Array{Any}(undef, length(watervals), length(alt)-2)  
-    wdict = Dict{String, Array}("O2"=>[], "HD"=>[], "HDtop"=>[], "H2"=>[], "H"=>[], "D"=>[], "CO"=>[], 
-                 "Hflux"=>[], "Dflux"=>[], "f"=>[], "CO/O2"=>[], "O3"=>[], 
-                 "DH"=>[])
-    if allDbearers
-        wdict["OD"]=>[]
-        wdict["HDO2"]=>[]
-        wdict["DO2"]=>[]
-    end
-
-    # loop water files and collect data 
-    i = 1
-    for wfile in wfilelist
-        # get the current array
-        ncur = get_ncurrent(wfile)
-
-        N0 = abs_or_mr == "abs" ? 1 : n_tot(ncur, 0)
-        Ntop = abs_or_mr == "abs" ? 1 : n_tot(ncur, 250e5)
-        LA = collect(0e5:2e5:78e5)
-        # H2min = n_alt_index[140e5] # Kras & Feldman 2001 measured H2 above 140 km
-        # H2max = n_alt_index[200e5]
-
-        # Calculate the things we care about
-        # O2 Mixing ratio at surface
-        append!(wdict["O2"], ncur[:O2][1]/N0)
-        # HD mixing ratio
-        append!(wdict["HD"], ncur[:HD][1]/N0)
-        append!(wdict["HDtop"], ncur[:HD][end]/Ntop)
-        # H2 mixing ratio
-        append!(wdict["H2"], sum(ncur[:H2][1:length(LA)])/sum([n_tot(ncur, h) for h in LA])) # ppm in lower atmo
-        # append!(wdict["H2"], sum(ncur[:H2][H2min:H2max]))
-        # D Mixing ratio
-        append!(wdict["D"], ncur[:D][end]/Ntop)
-        # H mixing ratio
-        append!(wdict["H"], ncur[:H][end]/Ntop)
-        # D/H at 150 km
-        append!(wdict["DH"], (ncur[:D][75]/ncur[:H][75])/(1.6e-4))
-        # CO mixing ratio
-        append!(wdict["CO"], ncur[:CO][1]/N0)
-        # CO/O2 ratio
-        append!(wdict["CO/O2"], ncur[:CO][1]/ncur[:O2][1])
-        # O3 mixing ratio
-        append!(wdict["O3"], sum(ncur[:O3])*2e5) # gets O3 in #/cm^2
-        # H and D fluxes
-        Hf = get_H_fluxes(wfile, oflux, temps)
-        Df = get_D_fluxes(wfile, oflux, temps)
-        append!(wdict["Hflux"], Hf)
-        append!(wdict["Dflux"], Df)
-        # fractionation factor 
-        append!(wdict["f"], 2*(Df/Hf) / (ncur[:HDO][1]/ncur[:H2O][1]))
-        # D/H profile
-        DHprofs[i, :] = ncur[:D] ./ ncur[:H]  # altitude profile
-        # Other D bearing species???
-        if allDbearers
-            append!(wdict["OD"], ncur[:OD][end]/Ntop)
-            append!(wdict["HDO2"], ncur[:HDO2][end]/Ntop)
-            append!(wdict["DO2"], ncur[:DO2][end]/Ntop)
-        end
-        i += 1
-    end
-
-    if make_plots == true
-        make_water_plots(watervals, wdict, DHprofs, q, mean_idx, subfolder)
-    end
-
-    println("Finished water plots")
-    return wdict
-end
-
-function analyze_Oflux(abs_or_mr, allDbearers, make_plots=false, path=lead)
-    # Establish important parameters, files, etc
-    Ofluxvals = [3e7, 4e7, 5e7, 6e7, 7e7, 8e7, 9e7, 1e8, 1.1e8, 1.2e8, 1.3e8, 
-                 1.4e8, 1.5e8, 1.6e8]
-    Ofluxvals_str = ["3e7", "4e7", "5e7", "6e7", "7e7", "8e7", "9e7", "1.0e8", 
-                     "1.1e8", "1.2e8", "1.3e8", "1.4e8", "1.5e8", "1.6e8"]
-    Ofilelist = [path*"Oflux_"*o*"/converged_Oflux_"*o*".h5" 
-                 for o in Ofluxvals_str]
-    temps = [meanTs, meanTt, meanTe]
-    mean_idx = findfirst(isequal(1.2e8), Ofluxvals) - 1
-    q = abs_or_mr == "abs" ? " abundance " : " mixing ratio " # set label
-    subfolder = abs_or_mr == "abs" ? "abs/" : "mr/"
-
-    # Establish variables to store data on simulations
-    odict = Dict("O2"=>[], "HD"=>[], "HDtop"=>[], "H2"=>[], "H"=>[], "D"=>[], "CO"=>[], 
-                 "Hflux"=>[], "Dflux"=>[], "f"=>[], "CO/O2"=>[], "O3"=>[], 
-                 "DH"=>[])
-    if allDbearers
-        odict["OD"]=>[]
-        odict["HDO2"]=>[]
-        odict["DO2"]=>[]
-    end
-
-    # Easier to deal with D/H profiles separately due to different array size
-    DHprofs = Array{Any}(undef, length(Ofluxvals_str), length(alt)-2)
-
-    # loop through O flux files 
-    i = 1
-    for (oflux, ofile) in zip(Ofluxvals, Ofilelist)
-        # calculate the things we care about
-        # get the current array
-        ncur = get_ncurrent(ofile)
-
-        N0 = abs_or_mr == "abs" ? 1 : n_tot(ncur, 0)
-        Ntop = abs_or_mr == "abs" ? 1 : n_tot(ncur, 250e5)
-        LA = collect(0e5:2e5:78e5)
-        # H2min = n_alt_index[140e5]
-        # H2max = n_alt_index[200e5]
-        
-        # Calculate the things we care about
-        # O2 Mixing ratio at surface
-        append!(odict["O2"], ncur[:O2][1]/N0)
-        # HD mixing ratio
-        append!(odict["HD"], ncur[:HD][1]/N0)
-        append!(odict["HDtop"], ncur[:HD][end]/Ntop)
-        # H2 mixing ratio
-        append!(odict["H2"], sum(ncur[:H2][1:length(LA)])/sum([n_tot(ncur, h) for h in LA]))
-        # append!(odict["H2"], sum(ncur[:H2][H2min:H2max]))
-        # D Mixing ratio
-        append!(odict["D"], ncur[:D][end]/Ntop)
-        # H mixing ratio
-        append!(odict["H"], ncur[:H][end]/Ntop)
-        # D/H at 150 km
-        append!(odict["DH"], (ncur[:D][75]/ncur[:H][75])/(1.6e-4))
-        # CO mixing ratio
-        append!(odict["CO"], ncur[:CO][1]/N0)
-        # CO/O2 ratio
-        append!(odict["CO/O2"], ncur[:CO][1]/ncur[:O2][1])
-        # O3 mixing ratio
-        append!(odict["O3"], sum(ncur[:O3])*2e5) # gets O3 in #/cm^2
-        # H and D fluxes
-        Hf = get_H_fluxes(ofile, oflux, temps)
-        Df = get_D_fluxes(ofile, oflux, temps)
-        append!(odict["Hflux"], Hf)
-        append!(odict["Dflux"], Df)
-        # fractionation factor 
-        append!(odict["f"], 2*(Df/Hf) / (ncur[:HDO][1]/ncur[:H2O][1]))
-        # D/H profile
-        DHprofs[i, :] = ncur[:D] ./ ncur[:H]  # altitude profiles
-        i += 1
-        # Other D bearing species???
-        if allDbearers
-            append!(odict["OD"], ncur[:OD][end]/Ntop)
-            append!(odict["HDO2"], ncur[:HDO2][end]/Ntop)
-            append!(odict["DO2"], ncur[:DO2][end]/Ntop)
-        end
-    end
-
-    if make_plots == true
-        make_Oflux_plots(Ofluxvals, Ofluxvals_str, odict, DHprofs, q, mean_idx, 
-                         subfolder)
-    end
-
-    println("Finished O flux")
-    return odict
-end
-    
-function analyze_T(abs_or_mr, allDbearers, SVP, make_plots=false, path=lead)
+function make_T_output_vs_data(output_MR, output_abs)
     #=
-    abs_or_mr: whether using the absolute abundance file or mixing ratio file
-    SVP: whether SVP was held constant ("const") for one temp profile or varied
-         with temp profile ("vary")
-    make_plots: whether to generate the plots
-    path: where to save plots
+    Makes the plots comparing simulation output with observational data.
+
     =#
 
-    if SVP=="const"
-        surfvals = [150.0, 160.0, 170.0, 180.0, 190.0, 200.0, 210.0, 220.0, 
-                    230.0, 240.0, 250.0, 260.0, 270.0]
-    elseif SVP=="vary"
-        surfvals = [190.0, 200.0, 210.0, 220.0, 230.0, 240.0, 250.0, 260.0, 
-                    270.0]
+    # set up
+    exps = ["surface", "tropopause", "exobase"]
+    c1 = ["#10007A", "#2F7965", "#e16262", "#D59A07"]  # just colors
+    medgray = "#444444"
+
+    nom_i_py = Dict("exobase"=>meanTe, "tropopause"=>meanTt, "surface"=>meanTs)
+
+
+    # where to place text, basically.
+    mean_text = Dict("surface"=>[218, 100], "tropopause"=>[131, 4], "exobase"=>[208, 4])
+    ylims = Dict("surface"=>[-10, 190], "tropopause"=>[-6.3, 4.2], "exobase"=>[-6.3, 4.2])
+    xt_args = Dict("surface"=>150:20:280, "tropopause"=>100:10:160, "exobase"=>150:50:350)
+    linelbls = DataFrame(Exp=["surface", "tropopause", "exobase"], 
+                          CO=[[155, -3],  [100, -5],   [175, -5]], 
+                          O2=[[145, 40],  [115, -2],   [150, -2]], 
+                          H2=[[180, 1],   [100, 2.3],  [150, 4.1]],
+                          O3=[[155, 110], [100, -0.8], [155, -0.8]])
+
+    # make plots pretty
+    rcParams = PyDict(matplotlib."rcParams")
+    rcParams["font.family"] = "sans-serif"
+    rcParams["font.sans-serif"] = ["Louis George Caf?"]
+    rcParams["font.monospace"] = ["FreeMono"]
+    rcParams["font.size"] = 22
+    rcParams["axes.labelsize"]= 24
+    rcParams["xtick.labelsize"] = 22
+    rcParams["ytick.labelsize"] = 22
+
+    fig, ax = subplots(1, 3, sharex=false, sharey=false, figsize=(21, 5))
+    subplots_adjust(wspace=0.15)
+
+
+    for i in 1:3
+        plot_bg(ax[i])
+        ex = exps[i]
+
+        # calculate the relativeness of each point wrt data
+        COdiff = (output_MR[ex]["CO"] .- data[1])/s[1]
+        O2diff = (output_MR[ex]["O2"] .- data[2])/s[2]
+        # H2diff = (ABSdictvar["H2"] .- data[3])/s[3]  # absolute abundance
+        H2diff = (output_MR[ex]["H2MR"]./1e-6 .- data[3])/s[3] # ppm
+        O3diff = (areadensity_to_micron_atm(output_abs[ex]["O3"]) .- data[4])/s[4] 
+
+        # plot
+        ax[i].plot(tvals[ex], COdiff, marker="o", ms=sz, color=c1[1], zorder=10)
+        ax[i].plot(tvals[ex], O2diff, marker="x", ms=sz, color=c1[2], zorder=10)
+        ax[i].plot(tvals[ex], H2diff, marker="*", ms=sz, color=c1[3], zorder=10)
+        ax[i].plot(tvals[ex], O3diff, marker="^", ms=sz, color=c1[4], zorder=10)
+        # plot the mean values
+        ax[i].axvline(nom_i_py[ex], color=medgray, zorder=5)
+        ax[i].axhline(0, color="black")
+
+        # text
+        ax[i].text(mean_text[ex][1], mean_text[ex][2], "Global\nmean", color=medgray, ha="left", va="top")
+        dfentry = linelbls[linelbls.Exp.==ex, :]
+        ax[i].text(dfentry.CO[1][1], dfentry.CO[1][2], "CO", color=c1[1], ha="left", va="top")
+        ax[i].text(dfentry.O2[1][1], dfentry.O2[1][2], L"O$_2$", color=c1[2], ha="left", va="top")
+        ax[i].text(dfentry.H2[1][1], dfentry.H2[1][2], L"H$_2$", color=c1[3], ha="left", va="top")
+        ax[i].text(dfentry.O3[1][1], dfentry.O3[1][2], L"O$_3$", color=c1[4], ha="left", va="top")
+
+        # labels and such
+        ax[i].set_xlabel(ex*" temperature (K)")
+        ax[i].set_xticks(xt_args[ex])
+        ax[i].set_ylim(ylims[ex][1], ylims[ex][2])
     end
+   
 
-    # Set up parameters, filenames, etc
-    tvals = Dict("surface"=>surfvals,
-                 "tropopause"=>[70.0, 80.0, 90.0, 100.0, 110.0, 120.0, 130.0, 
-                                140.0, 150.0, 160.0],
-                 "exobase"=>[150.0, 175.0, 200.0, 225.0, 250.0, 
-                             275.0, 300.0, 325.0, 350.0])
-    # Dictionaries to store each experiment's data so it can be returned
-    all_tdicts = Dict()
+    # SURFACE PLOT CONFIG
+    ax[1].xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(10))
+    ax[1].set_yscale("symlog", linthresh=0.2)
+    ax[1].set_yticks([-10, -1, 0, 1, 10, 100])
+    ax[1].set_yticklabels([-10, -1, 0, 1, 10, 100])
+    ax[1].set_ylabel(L"($X_{model}-X_{obs}$)/$\sigma$")
+    
+    # TROPOPAUSE PLOT CONFIG
+    ax[2].xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(10))
+    ax[2].yaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(1))
+    
+    # Extra clarifying text
+    ax[3].text(365, 4, "Model value \n"*L"$>$ observations", va="top")
+    ax[3].text(365, 0, "Model value \n"*L"$\approx$observations", va="center")
+    ax[3].text(365, -4, "Model value \n"*L"$<$observations")
 
-    tvals_str = Dict()
-    tempfilelist = Dict()
-    for k in keys(tvals)
-        tvals_str[k] = [string(trunc(Int, x)) for x in tvals[k]]
-        if k == "surface"
-            tempfilelist[k] = [path*"temp_"*t*"_$(meanTtint)_$(meanTeint)"*"/converged_temp_"*t*"_$(meanTtint)_$(meanTeint).h5" for t in tvals_str[k]]  # TODO: revert if necessary
-        elseif k == "tropopause"
-            tempfilelist[k] = [path*"temp_$(meanTsint)_"*t*"_$(meanTeint)"*"/converged_temp_$(meanTsint)_"*t*"_$(meanTeint).h5" for t in tvals_str[k]]
-        elseif k == "exobase"
-            tempfilelist[k] = [path*"temp_$(meanTsint)_$(meanTtint)_"*t*"/converged_temp_$(meanTsint)_$(meanTtint)_"*t*".h5" for t in tvals_str[k]]
-        end
-    end
-    meanT = Dict("surface"=>meanTs, "tropopause"=>meanTt, "exobase"=>meanTe)  # nominal 
-    oflux = 1.2e8
-    q = abs_or_mr == "abs" ? " abundance " : " mixing ratio " # set label
-    subfolder = abs_or_mr == "abs" ? "abs/" : "mr/"
-
-    # loop through which temp is varied and construct a list of datapoints
-    for experiment in keys(tvals) # loop across the dictionary
-        println("Now doing temperature ", experiment)
-        tdict = Dict("O2"=>[], "HD"=>[], "HDtop"=>[], "H2"=>[], "H"=>[], "D"=>[], "CO"=>[], 
-                     "Hflux"=>[], "Dflux"=>[], "f"=>[], "CO/O2"=>[], "O3"=>[], 
-                     "DH"=>[])
-        if allDbearers
-            tdict["OD"]=>[]
-            tdict["HDO2"]=>[]
-            tdict["DO2"]=>[]
-        end
-        
-        DHprofs = Array{Any}(undef, length(tvals_str[experiment]), length(alt)-2)
-
-        # now loop through the values for each varied temp
-        i = 1
-        for (tv, tfile) in zip(tvals[experiment], tempfilelist[experiment])
-            # set the temperature profile
-            if experiment == "surface" 
-                temps = [tv, meanTt, meanTe] 
-            elseif experiment == "tropopause"
-                temps = [meanTs, tv, meanTe]
-            elseif experiment == "exobase"
-                temps = [meanTs, meanTt, tv]
-            end
-
-            # get the current array
-            ncur = get_ncurrent(tfile)
-            N0 = abs_or_mr == "abs" ? 1 : n_tot(ncur, 0)
-            Ntop = abs_or_mr == "abs" ? 1 : n_tot(ncur, 250e5)
-            LA = collect(0e5:2e5:78e5)
-            # H2min = n_alt_index[140e5]
-            # H2max = n_alt_index[200e5]
-
-            # Calculate the things we care about
-            # O2 Mixing ratio at surface
-            append!(tdict["O2"], ncur[:O2][1]/N0)
-            # HD mixing ratio
-            append!(tdict["HD"], ncur[:HD][1]/N0)
-            append!(tdict["HDtop"], ncur[:HD][end]/Ntop)
-            # H2 mixing ratio
-            append!(tdict["H2"], sum(ncur[:H2][1:length(LA)])/sum([n_tot(ncur, h) for h in LA]))
-            # append!(tdict["H2"], sum(ncur[:H2][H2min:H2max]))
-            # D Mixing ratio
-            append!(tdict["D"], ncur[:D][end]/Ntop)
-            # H mixing ratio
-            append!(tdict["H"], ncur[:H][end]/Ntop)
-            # D/H at 150 km
-            append!(tdict["DH"], (ncur[:D][75]/ncur[:H][75])/(1.6e-4))
-            # CO mixing ratio
-            append!(tdict["CO"], ncur[:CO][1]/N0)
-            # CO/O2 ratio
-            append!(tdict["CO/O2"], ncur[:CO][1]/ncur[:O2][1])
-            # O3 mixing ratio
-            append!(tdict["O3"], sum(ncur[:O3])*2e5) # gets O3 in #/cm^2
-            # H and D fluxes
-            Hf = get_H_fluxes(tfile, oflux, temps)
-            Df = get_D_fluxes(tfile, oflux, temps)
-            append!(tdict["Hflux"], Hf)
-            append!(tdict["Dflux"], Df)
-            # fractionation factor 
-            append!(tdict["f"], 2*(Df/Hf) / (ncur[:HDO][1]/ncur[:H2O][1]))
-            # D/H profile
-            DHprofs[i, :] = ncur[:D] ./ ncur[:H]  # altitude profile
-            i += 1
-            # Other D bearing species???
-            if allDbearers
-                append!(tdict["OD"], ncur[:OD][end]/Ntop)
-                append!(tdict["HDO2"], ncur[:HDO2][end]/Ntop)
-                append!(tdict["DO2"], ncur[:DO2][end]/Ntop)
-            end
-        end
-
-        if make_plots == true
-            make_T_plots(tvals, tvals_str, tdict, DHprofs, experiment, q, meanT, 
-                         subfolder)
-        end
-        
-        println("Finished temperature ", experiment)
-
-        all_tdicts[experiment] = tdict
-    end
-    println("Finished temps")
-    return all_tdicts
+    ax[1].text(270, 80, "a", color="black", fontsize=26, weight="bold", va="bottom")
+    ax[2].text(160, 4, "b", color="black", fontsize=26, weight="bold", va="top")
+    ax[3].text(350, 4, "c", color="black", fontsize=26, weight="bold", va="top")
+    
+    savefig(mainpath*"output_vs_data_temps.png", bbox_inches="tight")      
 end
 
-# Define mean temperatures =====================================================
-global meanTs = 216.0
-global meanTt = 108.0
-global meanTe = 205.0
-
-global meanTsint = 216
-global meanTtint = 108
-global meanTeint = 205
-
 # Setup and folder Location ====================================================
-S = "const" # TODO: change or check each time 
-# lead = "/data/GDrive-CU/Research/Results/TradeoffPlots/Tradeoffs - solar mean/"
-lead = "/home/emc/GDrive-CU/Research/Results/TradeoffPlots/Tradeoffs - solar mean/"
+# mainpath = "/data/GDrive-CU/Research/Results/TradeoffPlots/Tradeoffs - solar mean/"
+mainpath = "/home/emc/GDrive-CU/Research/Results/"
+println("Enter a folder to use, no slashes (/home/emc/GDrive-CU/Research/Results/<folder>: ")
+append_me = readline(stdin)
+mainpath = mainpath*append_me*"/"
+
 makeplots = false   # whether to make the plots that go with each experiment
 other_deuterated = false
 write_new_files = false  # set to true if running for first time after new simulations
 
 # Function calls ===============================================================
 
+println("Analyzing water model output, building dicts, making supporting plots")
 water_data_mr = analyze_water("mr", other_deuterated, makeplots)
 water_data_abs = analyze_water("abs", other_deuterated, makeplots)
 
-println()
-
+# println()
+# println("Analyzing O flux model output, building dicts, making supporting plots")
 # o_data_abs = analyze_Oflux("abs", other_deuterated, makeplots)
 # o_data_mr = analyze_Oflux("mr", other_deuterated, makeplots)
 
-println()
+# println()
+println("Analyzing temp model output, building dicts, making supporting plots")
+T_data_mr = analyze_T("mr", other_deuterated, makeplots)
+T_data_abs = analyze_T("abs", other_deuterated, makeplots)
 
-T_data_mr = analyze_T("mr", other_deuterated, S, makeplots)
-T_data_abs = analyze_T("abs", other_deuterated, S, makeplots)
-
+println("Writing jld storage files")
 if write_new_files
-    wd_mr = jldopen(lead*"water_MR_data.jld", "w")
+    wd_mr = jldopen(mainpath*"water_MR_data.jld", "w")
     @write wd_mr water_data_mr
     close(wd_mr)
-    wd_abs = jldopen(lead*"water_abs_data.jld", "w")
+    wd_abs = jldopen(mainpath*"water_abs_data.jld", "w")
     @write wd_abs water_data_abs
     close(wd_abs)
 
-    # O_mr = jldopen(lead*"O_MR_data.jld", "w")
+    # O_mr = jldopen(result_folder*"O_MR_data.jld", "w")
     # @write O_mr o_data_mr
     # close(O_mr)
-    # O_abs = jldopen(lead*"O_abs_data.jld", "w")
+    # O_abs = jldopen(result_folder*"O_abs_data.jld", "w")
     # @write O_abs o_data_abs
     # close(O_abs)
 
-    T_mr = jldopen(lead*"T_MR_data.jld", "w")
+    T_mr = jldopen(mainpath*"T_MR_data.jld", "w")
     @write T_mr T_data_mr
     close(T_mr)
-    T_abs = jldopen(lead*"T_abs_data.jld", "w")
+    T_abs = jldopen(mainpath*"T_abs_data.jld", "w")
     @write T_abs T_data_abs
     close(T_abs)
 end
 
-# Relative changes plot with two panels ========================================
-# panel 1: metrics CO, O2, O3, and H2
-# panel 2: all the other measureablesbles except fractionation factor
-# panel 3: frationation factor
+# Result and discussion plots: =================================================
+# 1. f as a function of parameter (e.g. temperature or water vapor)
+# 2. atomic/molecular H/D and fluxes compared across the simulations
+# 3. Comparison of model output of CO, O2, O3, H2 to measurements in lit
 
-make_rel_change_plots(water_data_mr, water_data_abs, "water", S)
-# make_rel_change_plots(o_data_mr, o_data_abs, "O flux", S)
-make_rel_change_plots(T_data_mr, T_data_abs, "surface", S)
-make_rel_change_plots(T_data_mr, T_data_abs, "tropopause", S)
-make_rel_change_plots(T_data_mr, T_data_abs, "exobase", S)
+# make_rel_change_plots(o_data_mr, o_data_abs, "O flux")
+
+# Temperature plots
+println("Making temperature plots")
+# make_T_f_plot(T_data_mr)
+# make_T_Hspecies_plot(T_data_mr, "mr")
+# make_T_Hspecies_plot(T_data_abs, "abs")
+make_T_output_vs_data(T_data_mr, T_data_abs)
+
+# Water plots
+# println("Making water plots")
+# make_water_f_plot(water_data_mr)
+# make_water_Hspecies_plot(water_data_mr, "mr")
+# make_water_Hspecies_plot(water_data_abs, "abs")
+# make_water_output_vs_data(water_data_mr, water_data_abs)

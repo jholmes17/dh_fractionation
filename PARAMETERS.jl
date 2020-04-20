@@ -1,29 +1,140 @@
 ################################################################################
-# examine_H&D_rates.jl
-# TYPE: Analysis
-# WHICH: Equilibrium
-# DESCRIPTION: find rate profiles by altitude for H and D production.
-#
+# PARAMETERS.jl
+# TYPE: MAIN (constants)
+# WHICH: Equilibrium and perturbation experiments
+# DESCRIPTION: Just some standard global constants that need to get used 
+# EVERYWHERE
+# 
 # Eryn Cangi
-# 3 June 2019
-# Last edited: 3 January 2020- NOT FINISHED
+# December 2019
 # Currently tested for Julia: 0.7
 ################################################################################
 
-using PyPlot
-using HDF5
-using LaTeXStrings
-using PyCall
-using PlotUtils
-using JLD
-using Analysis
+# fundamental constants ========================================================
+const boltzmannK = 1.38e-23;    # J/K
+const bigG = 6.67e-11;          # N m^2/kg^2
+const mH = 1.67e-27;            # kg
+const marsM = 0.1075*5.972e24;  # kg
+const radiusM = 3396e5;         # cm
 
-include("PARAMETERS.jl")
+# Altitude grid discretization =================================================
+const alt = convert(Array, (0:2e5:250e5))
+const intaltgrid = round.(Int64, alt/1e5)[2:end-1];
+const zmin = alt[1]
+const zmax = alt[end];
+const dz = alt[2]-alt[1];
+n_alt_index=Dict([z=>clamp((i-1),1, length(alt)-2) for (i, z) in enumerate(alt)])
 
-# Constants and reaction net ===================================================
+hygropause_alt = 40e5
+
+# Temperatures =================================================================
+global meanTs = 216.0
+global meanTt = 130.0
+global meanTe = 205.0
+global meantemps = [meanTs, meanTt, meanTe]
+
+global meanTsint = 216
+global meanTtint = 130
+global meanTeint = 205
+
+global lowTs = 160.0
+global hiTs = 270.0
+global lowTt = 100.0
+global hiTt = 160.0
+global lowTe = 150.0
+global hiTe = 250.0
+
+# Lists ========================================================================
+const fullspecieslist = [:CO2, :O2, :O3, :H2, :OH, :HO2, :H2O, :H2O2, :O, :CO,
+                         :O1D, :H, :N2, :Ar, :CO2pl, :HOCO,
+                         # species for deuterium chemistry:
+                         :HDO, :OD, :HDO2, :D, :DO2, :HD, :DOCO];
+
+specieslist=fullspecieslist;  
+
+# array of species for which photolysis is important. All rates should
+# start with J and contain a species in specieslist above, which is used to 
+# compute photolysis. 
+const Jratelist=[:JCO2ion,:JCO2toCOpO,:JCO2toCOpO1D,:JO2toOpO,:JO2toOpO1D,
+                 :JO3toO2pO,:JO3toO2pO1D,:JO3toOpOpO,:JH2toHpH,:JOHtoOpH,
+                 :JOHtoO1DpH,:JHO2toOHpO,:JH2OtoHpOH,:JH2OtoH2pO1D,:JH2OtoHpHpO,
+                 :JH2O2to2OH,:JH2O2toHO2pH,:JH2O2toH2OpO1D,
+                 # deuterated species J rates:
+                 :JHDOtoHpOD, :JHDOtoDpOH, :JHDO2toOHpOD,
+                 # new March 2018
+                 :JHDOtoHDpO1D, :JHDOtoHpDpO, :JODtoOpD, :JHDtoHpD, :JDO2toODpO,
+                 :JHDO2toDO2pH, :JHDO2toHO2pD, :JHDO2toHDOpO1D, :JODtoO1DpD];
+
+const nochemspecies = [:N2, :Ar, :CO2pl, :H2O, :HDO];
+const chemspecies = setdiff(specieslist, nochemspecies);
+const notransportspecies = [:CO2pl, :H2O, :HDO];
+const transportspecies = setdiff(specieslist, notransportspecies);
+const speciesmolmasslist = Dict(:CO2=>44, :O2=>32, :O3=>48, :H2=>2, :OH=>17,
+                                :HO2=>33, :H2O=>18, :H2O2=>34, :O=>16, :CO=>28,
+                                :O1D=>16, :H=>1, :N2=>28, :Ar=>40, :CO2pl=>44,
+                                :HOCO=>45,
+                                # deuterium chemistry:
+                                :HDO=>19, :OD=>18, :HDO2=>35, :D=>2, :DO2=>34,
+                                :HD=>3, :DOCO=>46);
+
+
+# Plotty plot plot stuff =======================================================
+speciescolor = Dict( # H group
+                :H => "#ff0000", :D => "#ff0000", # red
+                :H2 => "#e526d7", :HD =>  "#e526d7", # dark pink/magenta
+
+                # hydroxides
+                :OH => "#7700d5", :OD => "#7700d5", # purple
+
+                # water group (roughly, I ain't a chemist)
+                :H2O => "#0083dc", :HDO => "#0083dc", # cornflower blue
+                :H2O2 => "#0000ff", :HDO2 => "#0000ff", # true blue
+                :HO2 => "#046868", :DO2 => "#046868",  # dark teal
+
+                # O group
+                :O1D => "#808000", # olive
+                :O => "#1a6115",   # forest green
+                :O2 => "#15da09",  # kelly/grass green
+                :O3 => "#269e56",  # light green
+
+                # CO group
+                :CO2 => "#d18564",   # dark peach
+                :CO2pl => "#614215", # brown
+                :CO => "#ff6600",    # orange
+                :HOCO => "#e8ba8c", :DOCO => "#e8ba8c",  #tannish
+
+                # nonreactants
+                :Ar => "#808080", :N2 => "#cccccc",);  # grays
+
+speciesstyle = Dict( # H group
+                :H => "-", :D => "--",
+                :H2 => "-",  :HD => "--",
+                # hydroxides
+                :OH => "-", :OD => "--",
+                # "water group" (roughly, I ain't a chemist)
+                :H2O => "-", :HDO => "--",
+                :H2O2 => "-", :HDO2 => "--",
+                :HO2 => "-", :DO2 => "--",
+                # O group
+                :O1D => "-", :O => "-", :O2 => "-", :O3 => "-",
+                # CO group
+                :CO => "-", :CO2 => "-", :CO2pl => "-",
+                :HOCO => "-", :DOCO => "--",
+                # nonreactants
+                :Ar => "-", :N2 => "-",);
+                
+# Chemistry ====================================================================
+# function to replace three body rates with the recommended expression
 threebody(k0, kinf) = :($k0*M/(1+$k0*M/$kinf)*0.6^((1+(log10($k0*M/$kinf))^2)^-1))
 threebodyca(k0, kinf) = :($k0/(1+$k0/($kinf/M))*0.6^((1+(log10($k0/($kinf*M)))^2)^-1))
 
+################################################################################
+############################### REACTION NETWORK ###############################
+################################################################################
+
+# reactions and multipliers on base rates for deuterium reactions from Yung
+# 1988; base rates from this work or Chaffin+ 2017. Note: below, H-ana means 
+# the same reaction but with only H-bearing species.
 reactionnet = [   #Photodissociation
              [[:CO2], [:CO, :O], :JCO2toCOpO],
              [[:CO2], [:CO, :O1D], :JCO2toCOpO1D],
@@ -195,191 +306,4 @@ reactionnet = [   #Photodissociation
              # CO2+ attack on molecular hydrogen
              [[:CO2pl, :H2], [:CO2, :H, :H], :(8.7e-10)], # from Kras 2010 / Scott 1997
              [[:CO2pl, :HD], [:CO2pl, :H, :D], :((2/5)*8.7e-10)]
-             ];
-
-
-# Functions ====================================================================
-@eval begin
-    function reactionrates_local($(specieslist...), $(Jratelist...), T, M)
-        #= a function to return chemical reaction rates for specified species
-           concentrations =#
-        $(Expr(:vcat, map(x->Expr(:call,:*,x[1]..., x[3]), reactionnet)...))
-    end
-end
-
-function reactionrates(n_current)
-    #=
-    Creates an array of size length(intaltgrid) x (number of reactions).
-    Populated with chemical reaction rates for each reaction based on species
-    populations.
-    =#
-    theserates = fill(convert(Float64, NaN),(length(intaltgrid),length(reactionnet)))
-    for ialt in 1:length(intaltgrid)
-        theserates[ialt,:] = reactionrates_local([[n_current[sp][ialt] for sp in specieslist];
-                                                [n_current[J][ialt] for J in Jratelist];
-                                                Temp(alt[ialt+1]);
-                                                n_tot(n_current, alt[ialt+1])]...)
-    end
-    rxnlist = ["$(join(x[1], " + ")) -> $(join(x[2], " + "))" for x in reactionnet]
-    return theserates, rxnlist
-end
-
-Temp(z::Float64) = Tpiecewise(z, meanTs, meanTt, meanTe)
-
-# Main routine =================================================================
-base = "/home/emc/GDrive-CU/Research/Results/TradeoffPlots/Oflux_1.2e8/"
-ncur_dh_bulge = get_ncurrent(base*"converged_Oflux_1.2e8.h5")
-ratetbl, rxnlist = reactionrates(ncur_dh_bulge)
-println(rxnlist)
-# Find the reactions associated with H or D loss and production.
-Hloss = []
-Hprod = []
-Dloss = []
-Dprod = []
-
-for R in rxnlist
-    if occursin(r"\bH\b.+(?=->)", R)
-        push!(Hloss, R)
-    end
-    if occursin(r"(?<=->).+\bH\b", R)
-        push!(Hprod, R)
-    end
-    if occursin(r"\bD\b.+(?=->)", R)
-        push!(Dloss, R)
-    end
-    if occursin(r"(?<=->).+\bD\b", R)
-        push!(Dprod, R)
-    end
-end
-
-# Find the indices of the loss and production reactions within rxnlist. These indices correspond to the column number in ratetbl.
-Hloss_i = []
-Hprod_i = []
-Dloss_i = []
-Dprod_i = []
-for rxn in Hloss
-    append!(Hloss_i, findfirst(isequal(rxn), rxnlist))
-end
-for rxn in Hprod
-    append!(Hprod_i, findfirst(isequal(rxn), rxnlist))
-end
-for rxn in Dloss
-    append!(Dloss_i, findfirst(isequal(rxn), rxnlist))
-end
-for rxn in Dprod
-    append!(Dprod_i, findfirst(isequal(rxn), rxnlist))
-end
-
-Hloss_profile = Array{Float64}(undef, 99)
-Hprod_profile = Array{Float64}(undef, 99)
-Dloss_profile = Array{Float64}(undef, 99)
-Dprod_profile = Array{Float64}(undef, 99)
-
-for i in Hloss_i
-    Hloss_profile .+= ratetbl[:, i]
-end
-
-for i in Hprod_i
-    Hprod_profile .+= ratetbl[:, i]
-end
-
-for i in Dloss_i
-    Dloss_profile .+= ratetbl[:, i]
-end
-
-for i in Dprod_i
-    Dprod_profile .+= ratetbl[:, i]
-end
-
-Hloss_profile .*= 2e5
-Hprod_profile .*= 2e5
-Dloss_profile .*= 2e5
-Dprod_profile .*= 2e5
-
-# Plotting =====================================================================
-
-marks = [".","o","v","^","<",">","8","s","*","x","X","D", ".","o","v","^",
-		 "<",">","8","s","*","x","X","D"]
-
- # Set plot fonts to be good for posters and presentations
-rcParams = PyCall.PyDict(matplotlib."rcParams")
-rcParams["font.sans-serif"] = ["Louis George Caf?"]
-rcParams["font.monospace"] = ["FreeMono"]
-rcParams["font.size"] = 22
-rcParams["axes.labelsize"]= 24
-rcParams["xtick.labelsize"] = 22
-rcParams["ytick.labelsize"] = 22
-
-# Total H and D loss and production rates --------------------------------------
-fig, ax = subplots(figsize=(10,5))
-plot(Hprod_profile, intaltgrid, color="red", label="H prod")
-plot(Hloss_profile, intaltgrid, color="navy", label="H loss")
-plot(Dprod_profile, intaltgrid, color="red", linestyle="--", label="D prod")
-plot(Dloss_profile, intaltgrid, color="navy", linestyle="--", label="D loss")
-xscale("log")
-ylabel("Altitude (km)")
-xlabel(L"Reaction rate (cm$^{-2}$)")
-legend()
-savefig(base*"total_rates_H_and_D.png", bbox_inches="tight")
-
-# Now see which reaction seems to be responsible. H loss and production:
-fig = figure(figsize=(8,6))
-cullers = get_colors(length(Hloss_i))
-c = 1
-for i in Hloss_i
-    plot(ratetbl[:, i].*2e5, intaltgrid, label=rxnlist[i], color=cullers[c, :], marker=marks[c], ms=7)
-    c+=1
-end
-xscale("log")
-legend(bbox_to_anchor=(1.1, 1))
-title("Chemical reactions: H loss")
-xlabel(L"Reaction rate (cm$^{-2}$)")
-ylabel("Altitude (km)")
-ylim(25, 75)
-savefig(base*"Hloss.png", bbox_inches="tight")
-
-fig = figure(figsize=(8,6))
-cullers = get_colors(length(Hprod_i))
-c = 1
-for i in Hprod_i
-    plot(ratetbl[:, i].*2e5, intaltgrid, label=rxnlist[i], color=cullers[c, :], marker=marks[c], ms=7)
-    c+=1
-end
-xscale("log")
-legend(bbox_to_anchor=(1.1, 1))
-title("Chemical reactions: H production")
-xlabel(L"Reaction rate (cm$^{-2}$)")
-ylabel("Altitude (km)")
-# ylim(25, 75)
-savefig(base*"Hproduction.png", bbox_inches="tight")
-
-# D loss and production --------------------------------------------------------
-fig = figure(figsize=(8,6))
-cullers = get_colors(length(Dloss_i))
-c = 1
-for i in Dloss_i
-    plot(ratetbl[:, i].*2e5, intaltgrid, label=rxnlist[i], color=cullers[c, :], marker=marks[c], ms=7)
-    c+=1
-end
-xscale("log")
-legend(bbox_to_anchor=(1.1, 1))
-title("Chemical reactions: D loss")
-ylim(25, 75)
-xlabel(L"Reaction rate (cm$^{-2}$)")
-ylabel("Altitude (km)")
-savefig(base*"Dloss.png", bbox_inches="tight")
-
-fig = figure(figsize=(8,6))
-cullers = get_colors(length(Dprod_i))
-c = 1
-for i in Dprod_i
-    plot(ratetbl[:, i].*2e5, intaltgrid, label=rxnlist[i], color=cullers[c, :], marker=marks[c], ms=7)
-    c+=1
-end
-xscale("log")
-legend(bbox_to_anchor=(1.1, 1))
-title("Chemical reactions: D production")
-#ylim(25, 75)
-xlabel(L"Reaction rate (cm$^{-2}$)")
-ylabel("Altitude (km)")
-savefig(base*"Dproduction.png", bbox_inches="tight")
+             ]
