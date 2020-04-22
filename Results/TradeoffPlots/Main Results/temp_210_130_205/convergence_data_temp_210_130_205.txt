@@ -1,0 +1,29 @@
+Finished convergence for temp experiment with control parameters: 
+T_0=210.0, T_tropo=130.0, T_exo=205.0
+water init=0.000141
+DH=5.5 
+Oflux=1.2e8
+SVP fixed: true
+Solar cycle status: solar mean
+
+CROSS SECTIONS: 
+H2, HD: binnedH2.csv, binnedH2.csv
+H2O, HDO: h2oavgtbl.dat, HDO.dat
+H2O2, HDO2: H2O2.dat, H2O2.dat
+O3: O3.dat, O3Chap.dat
+OH, OD: binnedOH.csv, binnedOHo1D.csv, OD.csv
+CO2: CO2.dat, binnedCO2e.csv
+O2: O2.dat, 130-190.cf4, 190-280.cf4, 280-500.cf4
+
+BOUNDARY CONDITIONS: 
+n: number density at surface, f: flux at top, v: velocity at top
+HDO: n=5.327983281446008e14, f=0.0
+Ar: n=4.2e15, f=0.0
+H: f=0.0, v=401.61387684149963
+D: f=0.0, v=0.518861995476794
+N2: n=3.99e15, f=0.0
+H2: f=0.0, v=0.518861995476794
+CO2: n=2.1e17, f=0.0
+H2O: n=5.327983281446008e14, f=0.0
+O: f=0.0, f=1.2e8
+HD: f=0.0, v=0.0006056893814626976
