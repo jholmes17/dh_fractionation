@@ -36,9 +36,9 @@ function make_reproduction_plot()
            concentration)
     =#
     Oflux = 1.2e8 
-    filemin = "/home/emc/GDrive-CU/Research/Results/Replications/Kras2002-rep/temp_213_125_200/converged_temp_213_125_200.h5"
-    filemean = "/home/emc/GDrive-CU/Research/Results/Replications/Kras2002-rep/temp_213_125_270/converged_temp_213_125_270.h5"
-    filemax = "/home/emc/GDrive-CU/Research/Results/Replications/Kras2002-rep/temp_213_125_350/converged_temp_213_125_350.h5"
+    filemin = results_dir*"Replications/Kras2002-rep/temp_213_125_200/converged_temp_213_125_200.h5"
+    filemean = results_dir*"Replications/Kras2002-rep/temp_213_125_270/converged_temp_213_125_270.h5"
+    filemax = results_dir*"Replications/Kras2002-rep/temp_213_125_350/converged_temp_213_125_350.h5"
 
 
     # Calculate f values -------------------------------------------------------
@@ -136,7 +136,7 @@ function make_reproduction_plot()
                 ha="right")
     end
 
-    savefig("../Results/ALL STUDY PLOTS/f-reproductions-plot.png", bbox_inches="tight")
+    savefig(results_dir*"ALL STUDY PLOTS/f-reproductions-plot.png", bbox_inches="tight")
 end
 
 # ==============================================================================

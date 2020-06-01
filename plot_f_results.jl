@@ -6,7 +6,8 @@
 #
 # Eryn Cangi
 # 31 May 2019
-# Currently tested for Julia: 0.7
+# Last edited: 21 April 2020
+# Currently tested for Julia: 1.4.1
 ################################################################################
 
 using PyPlot
@@ -113,7 +114,7 @@ end
 
 function do_it_for_yung_case()
     n_alt_index=Dict([z=>clamp((i-1),1, length(alt)-2) for (i, z) in enumerate(alt)])
-    calculate_f_yung("/home/emc/GDrive-CU/Research/Results/Yung-With-Old-Water/Case 1/2019 redo for assurance/converged_yung_case1.h5", 1.2e8)
+    calculate_f_yung(results_dir*"Yung-With-Old-Water/Case 1/2019 redo for assurance/converged_yung_case1.h5", 1.2e8)
 end
 
 
@@ -126,7 +127,7 @@ function plot_results_barchart(escape_type)
     =#
     n_alt_index=Dict([z=>clamp((i-1),1, length(alt)-2) for (i, z) in enumerate(alt)])
     Oflux = 1.2e8# whatever Oflux is, in format "1.2e8" cm^-2 s^-1
-    base = "/home/emc/GDrive-CU/Research/Results/VarWaterTemp/"
+    base = results_dir*"VarWaterTemp/"
 
     # meanTs = 216.0
     # downTs = 162.0
@@ -221,7 +222,7 @@ function plot_results_barchart(escape_type)
         end
     end
 
-    savefig("../Results/ALL STUDY PLOTS/f-results-plot-$(escape_type).png", bbox_inches="tight")
+    savefig(results_dir*"ALL STUDY PLOTS/f-results-plot-$(escape_type).png", bbox_inches="tight")
 end
 
 function plot_results_caltech_together(base)
@@ -235,7 +236,7 @@ function plot_results_caltech_together(base)
     
 
     # get high and low f in surfaces
-    f_surf = Array{Float64}(undef, 3, 3) #array to store f
+    f_surf = Array{Float64}(undef, 3, 4) #array to store f
     f_surf[:, 1] = [lowTs, meanTs, hiTs]
     i = 1
     for Ts in f_surf[:, 1]
@@ -246,11 +247,12 @@ function plot_results_caltech_together(base)
         # calculate f
         f_surf[i, 2] = calculate_f(filetouse, "thermal", [Ts, meanTt, meanTe], Oflux)
         f_surf[i, 3] = calculate_f(filetouse, "both", [Ts, meanTt, meanTe], Oflux)
+        f_surf[i, 4] = calculate_f(filetouse, "nonthermal", [Ts, meanTt, meanTe], Oflux)
         i += 1
     end
 
     # get high and low f in tropopause
-    f_tropo = Array{Float64}(undef, 3, 3) #array to store f
+    f_tropo = Array{Float64}(undef, 3, 4) #array to store f
     f_tropo[:, 1] = [lowTt, meanTt, hiTt]
     i = 1
     for Tt in f_tropo[:, 1]
@@ -261,11 +263,12 @@ function plot_results_caltech_together(base)
         # calculate f
         f_tropo[i, 2] = calculate_f(filetouse, "thermal", [meanTs, Tt, meanTe], Oflux)
         f_tropo[i, 3] = calculate_f(filetouse, "both", [meanTs, Tt, meanTe], Oflux)
+        f_tropo[i, 4] = calculate_f(filetouse, "nonthermal", [meanTs, Tt, meanTe], Oflux)
         i += 1
     end
 
     # get high and low f in exobase
-    f_exo = Array{Float64}(undef, 3, 3) #array to store f
+    f_exo = Array{Float64}(undef, 3, 4) #array to store f
     f_exo[:, 1] = [lowTe, meanTe, hiTe]
     i = 1
     for Te in f_exo[:, 1]
@@ -276,19 +279,19 @@ function plot_results_caltech_together(base)
         # calculate f
         f_exo[i, 2] = calculate_f(filetouse, "thermal", [meanTs, meanTt, Te], Oflux)
         f_exo[i, 3] = calculate_f(filetouse, "both", [meanTs, meanTt, Te], Oflux)
+        f_exo[i, 4] = calculate_f(filetouse, "nonthermal", [meanTs, meanTt, Te], Oflux)
         i += 1
     end
-    # println(f_exo)
 
     # get high and low f in water
-    f_water = Array{Float64}(undef, 5, 3) #array to store f
+    f_water = Array{Float64}(undef, 5, 4) #array to store f
     waterfolders = search_subfolders(base, r"water_\d.+")#r"water_[0-9]+\.[0-9]+e-[0-9]")
     i = 1
     for w in waterfolders
 
         # get the experiment name
-        waterexp = match(r"water_[0-9]+\.[0-9]+e-[0-9]", w).match
-        watermr = match(r"[0-9]+\.[0-9]+e-[0-9]", waterexp).match
+        waterexp = match(r"water_\d.+", w).match
+        watermr = match(r"\d.+", waterexp).match
         # construct file name
         filetouse = w * "/converged_"*waterexp*".h5"
 
@@ -296,6 +299,7 @@ function plot_results_caltech_together(base)
         f_water[i, 1] = parse(Float64, watermr)
         f_water[i, 2] = calculate_f(filetouse, "thermal", [meanTs, meanTt, meanTe], Oflux)
         f_water[i, 3] = calculate_f(filetouse, "both", [meanTs, meanTt, meanTe], Oflux)
+        f_water[i, 4] = calculate_f(filetouse, "nonthermal", [meanTs, meanTt, meanTe], Oflux)
         i += 1
     end
 
@@ -310,6 +314,7 @@ function plot_results_caltech_together(base)
     # the f calculations for thermal 
     f_mean_thermal = calculate_f(mn, "thermal", [meanTs, meanTt, meanTe], Oflux)
     f_mean_both = calculate_f(mn, "both", [meanTs, meanTt, meanTe], Oflux)
+    f_mean_nonthermal = calculate_f(mn, "nonthermal", [meanTs, meanTt, meanTe], Oflux)
 
     f_thermal = DataFrame(Exp=["Surface", "Tropopause", "Exobase", "Water", ""],
                           Min=[minimum(f_surf[:, 2]), minimum(f_tropo[:, 2]), 
@@ -323,13 +328,24 @@ function plot_results_caltech_together(base)
                        Max=[maximum(f_surf[:, 3]), maximum(f_tropo[:, 3]), 
                             maximum(f_exo[:, 3]), maximum(f_water[:, 3]), 1])
 
+    f_nonthermal = DataFrame(Exp=["Surface", "Tropopause", "Exobase", "Water", ""],
+                             Min=[minimum(f_surf[:, 4]), minimum(f_tropo[:, 4]), 
+                                  minimum(f_exo[:, 4]), minimum(f_water[:, 4]), 1],
+                             Max=[maximum(f_surf[:, 4]), maximum(f_tropo[:, 4]), 
+                                  maximum(f_exo[:, 4]), maximum(f_water[:, 4]), 1])
+ 
     # Print the results for use in a table in the paper    
     println("thermal")
     println("f mean: $(f_mean_thermal)")
     println(f_thermal)
+    println()
     println("thermal + nonthermal")
     println("f mean: $(f_mean_both)")
     println(f_both)
+    println()
+    println("nonthermal")
+    println("f mean: $(f_mean_nonthermal)")
+    println(f_nonthermal)
 
     toplot_others = Dict("Clarke+ 2019"=>[0.016, 0.047],
                    "Krasnopolsky 2002"=>[0.055, 0.082, 0.167],
@@ -401,14 +417,14 @@ function plot_results_caltech_together(base)
     ax.text(1e-5, 5, "This study", color="black", fontsize=24, va="top")
     ax.text(2e-4, 4.75, "Thermal escape only")
     ax.text(6e-3, 4.75, "Thermal + non-thermal escape")
-    ax.text(nalign, 0, "Mean atmosphere", color=myorange, ha=nameha)
+    ax.text(nalign, 0, "Standard atm.", color=myorange, ha=nameha)
     ax.text(f_mean_thermal-0.0003, 0, L"\overline{f}="*"$(round(f_mean_thermal, digits=3))", 
             color=myorange, ha="right", va="center")
     ax.text(f_mean_both-0.01, 0, L"\overline{f}="*"$(round(f_mean_both, digits=3))",
             color=myorange, ha="right", va="center")
     ax.text(nalign, 1, L"$\overline{T}_{surface} \pm 25$%", 
             color=colors[1], va="center", ha=nameha)
-    ax.text(nalign, 2, L"$\overline{T}_{tropop.} \pm 25$%", 
+    ax.text(nalign, 2, L"$\overline{T}_{tropo} \pm 25$%", 
             color=colors[2], va="center", ha=nameha)
     ax.text(nalign, 3, L"$\overline{T}_{exobase} \pm 25$%", 
             color=colors[3], va="center", ha=nameha)
@@ -474,11 +490,12 @@ function plot_results_caltech_together(base)
     ax.set_xlim([1e-5, 1])
     # save to the two useful folders
     savefig(base*"f_results.png", bbox_inches="tight")
-    savefig("../Results/ALL STUDY PLOTS/f_results.png", bbox_inches="tight")
+    savefig(results_dir*"ALL STUDY PLOTS/f_results.png", bbox_inches="tight")
 end
 
 # Do my things =================================================================
 
-base = "/home/emc/GDrive-CU/Research/Results/VarWaterTemp-HDO250/"
+# base = results_dir*"VarWaterTemp-HDO250/"
+base = results_dir*"VarWaterTemp/"
 
 plot_results_caltech_together(base)

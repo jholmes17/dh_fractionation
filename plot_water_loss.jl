@@ -5,9 +5,10 @@
 # DESCRIPTION: Estimates water lost from Mars for a given array of fractionation 
 # factors and plots it, along with the Rayleigh distillation equation.
 #
-# Updated 26 December 2019
 # Eryn Cangi
-# Currently tested for Julia: 0.7
+# 2019
+# Last edited: 21 April 2020
+# Currently tested for Julia: 1.4.1
 ################################################################################
 
 using Analysis
@@ -30,7 +31,7 @@ function required_escape_rate(W_lost)
     flux = H_lost / 1.419e17 # units #/cm^2s 
 end
 
-function plot_water_loss(f_therm, f_both, f_therm_range=nothing, f_therm_both=nothing)
+function plot_water_loss(f_therm, f_both, f_therm_range=nothing, f_both_range=nothing)
     #=
     Plot water loss as a result of fractionation factor results and also a line
     according to the D/H ratio used. 
@@ -49,10 +50,10 @@ function plot_water_loss(f_therm, f_both, f_therm_range=nothing, f_therm_both=no
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = "Louis George Caf?"
     rcParams["font.monospace"] = "FreeMono"
-    rcParams["font.size"] = 26
-    rcParams["axes.labelsize"] = 28
-    rcParams["xtick.labelsize"] = 26
-    rcParams["ytick.labelsize"] = 26
+    rcParams["font.size"] = 18
+    rcParams["axes.labelsize"] = 20
+    rcParams["xtick.labelsize"] = 18
+    rcParams["ytick.labelsize"] = 18
     ax = gca()
     plot_bg(ax)
     xlabel("Current exchangeable water (m GEL)")
@@ -66,8 +67,8 @@ function plot_water_loss(f_therm, f_both, f_therm_range=nothing, f_therm_both=no
     loss_t = h2olost(cur_h2o, 5.5, 1.275, f_therm)
     loss_b = h2olost(cur_h2o, 5.5, 1.275, f_both)
 
-    ax.plot(cur_h2o, loss_t, zorder=2, color=blues[1, :], marker="D", ms=12)
-    ax.plot(cur_h2o, loss_b, zorder=2, color=blues[2, :], marker="D", ms=12)
+    ax.plot(cur_h2o, loss_t, zorder=2, color=blues[1, :], marker="D")
+    ax.plot(cur_h2o, loss_b, zorder=2, color=blues[2, :], marker="D")
 
     if f_therm_range != nothing
         therm_min_loss = h2olost(cur_h2o, 5.5, 1.275, f_therm_range[1])
@@ -104,7 +105,7 @@ function plot_water_loss(f_therm, f_both, f_therm_range=nothing, f_therm_both=no
     text(21, 83, "thermal+non-thermal escape", rotation=24, color=blues[2, :])
     text(22, 68, "thermal escape only", rotation=23, color=blues[1, :])
 
-    savefig("../Results/ALL STUDY PLOTS/h2oloss.png", bbox_inches="tight")
+    savefig(results_dir*"ALL STUDY PLOTS/h2oloss.png", bbox_inches="tight")
 end
 
 function plot_simple_water_loss(cur_h2o=25)
@@ -144,17 +145,18 @@ function plot_simple_water_loss(cur_h2o=25)
     text(0.000005, 50, "Water loss constant \n"+L" with $f$ when $f\ll0.05$")
     text(0.0006, 200, "Water loss depends \nstrongly on " + L"$f$ for $f\gtrapprox 0.05$")
     ylim(0, 240)
-    savefig("../Results/ALL STUDY PLOTS/h2oloss_simple.png", bbox_inches="tight")
+    savefig(results_dir*"ALL STUDY PLOTS/h2oloss_simple.png", bbox_inches="tight")
 end
 
 function main()
     println("ALERT: Make sure the f values are correct."*
             " They must be filled in manually, using output from plot_f_results.jl")
-    f_mean_thermal = 0.0018797755997056428
-    f_therm_range = [3.23715e-5, 0.0170131]
-    f_mean_both = 0.05971712335227322
-    f_both_range = [0.032912, 0.102279]
+    f_mean_thermal = 0.001899480829925377
+    f_therm_range = [3.26998e-5, 0.0171938]
+    f_mean_both = 0.06033344000516848
+    f_both_range = [0.0332205, 0.103425]
 
     plot_water_loss(f_mean_thermal, f_mean_both, f_therm_range, f_both_range)
 end
 
+main()

@@ -27,6 +27,9 @@ plt.rcParams['axes.labelsize'] = 22
 plt.rcParams['xtick.labelsize'] = 18
 plt.rcParams['ytick.labelsize'] = 18
 
+research_dir = "/home/emc/GDrive-CU/Research/FractionationModeling/"
+results_dir = research_dir+"Results/"
+
 # Fit the 250K data on the red edge and extrapolate to 220 nm ==================
 
 # Do the line fit
@@ -221,6 +224,6 @@ plt.legend(custom_lines, ["Cheng+1999 (298K)",
                           # "Cheng+1999 (250K)",
                           "Cheng+2004 (300K)", "extrapolated"], loc="lower left")
                           # "0.5*(Cheng+2004 data and extrapolation)"], loc="lower left")
-plt.savefig("../Results/ALL STUDY PLOTS/HDO_xsects.png", bbox_inches="tight")
+plt.savefig(results_dir+"ALL STUDY PLOTS/HDO_xsects.png", bbox_inches="tight")
 
 np.savetxt("uvxsect/HDO_xsects.dat", interpdata, fmt=['%.1f', '%.7e'] )

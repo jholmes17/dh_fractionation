@@ -6,7 +6,7 @@
 #
 # Eryn Cangi
 # 3 June 2019
-# Last edited: 3 January 2020- NOT FINISHED
+# Last edited: 21 April 2020 - NOT FINISHED
 # Currently tested for Julia: 0.7
 ################################################################################
 
@@ -227,7 +227,7 @@ end
 Temp(z::Float64) = Tpiecewise(z, meanTs, meanTt, meanTe)
 
 # Main routine =================================================================
-base = "/home/emc/GDrive-CU/Research/Results/TradeoffPlots/Oflux_1.2e8/"
+base = results_dir*"TradeoffPlots/Oflux_1.2e8/"
 ncur_dh_bulge = get_ncurrent(base*"converged_Oflux_1.2e8.h5")
 ratetbl, rxnlist = reactionrates(ncur_dh_bulge)
 println(rxnlist)

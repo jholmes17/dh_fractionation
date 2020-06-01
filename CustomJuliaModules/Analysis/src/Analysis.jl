@@ -12,7 +12,7 @@ using PlotUtils
 
 # using Photochemistry
 
-include("../../.././PARAMETERS.jl")
+include("/home/emc/GDrive-CU/Research-FF/PARAMETERS.jl")
 
 export get_ncurrent, write_ncurrent, n_tot, 
        effusion_velocity, speciesbcs, 
@@ -157,16 +157,16 @@ function GEL_to_molecule(GEL, HorH2O)
 end
 
 # Flux and f ===================================================================
-function get_flux(species, flux_type, readfile, oflux, temps; repro=false)
+function get_flux(species, readfile, oflux, temps; repro=false, therm_only=false)
     #=
     Retrieves the flux for a given species at the top of the equilibrated 
     atmosphere.
     species: species in question, :H or :D. no error control right now
-    flux_type: "thermal" or "both"
     readfile: the file with simulation results
     oflux: flux of O in /cm^2s. 
     temps: array of [Ts, Tt, Te]
-    meantemps: same, but the array of mean temperatures
+    repro: whether flux is being calculated for reproduction of a past study
+    therm_only: whether to return flux_t only, false by default
     =#
     n_current = get_ncurrent(readfile)
 
@@ -175,8 +175,9 @@ function get_flux(species, flux_type, readfile, oflux, temps; repro=false)
     exptype = match(r"[a-z]{0,5}(?=_.+)",readfile).match
 
     bearer = Dict(:D=>[:D, :HD], :H=>[:H, :HD, :H2])
-    multiplier = Dict(:D=>[1, 1], :H=>[1, 1, 2])
-    flux = 0
+    num_D_or_H = Dict(:D=>[1, 1], :H=>[1, 1, 2])
+    flux_t = 0
+    flux_nt = 0
 
     # set things up for the millionth time for accurate boundary conditions
     Temp(z::Float64) = Tpiecewise(z, temps[1], temps[2], temps[3])
@@ -199,20 +200,20 @@ function get_flux(species, flux_type, readfile, oflux, temps; repro=false)
                  "H2"=>H2_effusion_velocity, "HD"=>HD_effusion_velocity)
 
     # Now, actually add up the fluxes 
-    for (s, m) in zip(bearer[species], multiplier[species])
+    for (s, m) in zip(bearer[species], num_D_or_H[species])
         # thermal only
-        flux += m * n_current[s][end]*speciesbcs(s, surface_watersat, v_eff, oflux)[2,2]
+        flux_t += m * n_current[s][end]*speciesbcs(s, surface_watersat, v_eff, oflux)[2,2]
     end
-    if flux_type=="both"
-        # for thermal + nonthermal escape 
-        # Nonthermal ecsape velocities for temperatures: T_exo = 158K, 205K, 264K. 
-        # using ratios of thermal/nonthermal from Kras 2010, in cm/s.
+    
+    # Nonthermal ecsape velocities for temperatures: T_exo = 158K, 205K, 264K. 
+    # using ratios of thermal/nonthermal from Kras 2010, in cm/s.
+    if therm_only==false
         if repro==false
             # inds = Dict(158 => 1, 205 => 2, 264 => 3)  # convert the temp to an index
-            inds = Dict(150=>1, 205=>2, 250=>3) # TODO: check these regularly
+            inds = Dict(150=>1, 205=>2, 250=>3) # the three exobase temps we use
             i = inds[Int(temps[3])]
             v_nt = Dict(:H => [3.8, 49.3, 106.5], :H2 => [1, 5.04, 11.5], 
-                        :D => [8.6, 15.5, 24.2], :HD => [0.19, 3.9, 8.5])  #in cm/s
+                        :D => [8.6, 15.5, 24.2], :HD => [0.19, 3.9, 8.5])  #in cm/s. TODO: are these values suspicious?????
         else
             # If reproducing past studies, need the nonthermal escape from Kras 2002.
             inds = Dict(200 => 1, 270 => 2, 350 => 3)  # convert the temp to an index
@@ -220,13 +221,20 @@ function get_flux(species, flux_type, readfile, oflux, temps; repro=false)
             # Nonthermal: cm/s. Each species has a value recorded at T = 200K, 
             # 270K, and 350K.
             v_nt = Dict(:H => [38, 56, 89], :H2 => [12.9, 18.2, 28], :D => [17, 24, 37],
-                        :HD => [8.2, 11.5, 17.7])
+                        :HD => [8.2, 11.5, 17.7])  
         end
-        for (s, m) in zip(bearer[species], multiplier[species])
-            flux += m * n_current[s][end] * v_nt[s][i]
+
+        for (s, m) in zip(bearer[species], num_D_or_H[species])
+            flux_nt += m * n_current[s][end] * v_nt[s][i]
+            #flux += flux_nt
         end
     end
-    return flux
+
+    if therm_only==true
+        return flux_t
+    else
+        return flux_t, flux_nt
+    end
 end
 
 function calculate_f(thefile, flux_type, temps, oflux; reprod=false)
@@ -238,15 +246,22 @@ function calculate_f(thefile, flux_type, temps, oflux; reprod=false)
     =#
     ncur = get_ncurrent(thefile)
 
+    t_flux_H, nt_flux_H = get_flux(:H, thefile, oflux, temps, repro=reprod)
+    t_flux_D, nt_flux_D = get_flux(:D, thefile, oflux, temps, repro=reprod)
+
     if flux_type=="thermal"
-        Hf = get_flux(:H, "thermal", thefile, oflux, temps, repro=reprod)
-        Df = get_flux(:D, "thermal", thefile, oflux, temps, repro=reprod)
+        Hf = t_flux_H
+        Df = t_flux_D
     elseif flux_type=="both"
-        Hf = get_flux(:H, "both", thefile, oflux, temps, repro=reprod)
-        Df = get_flux(:D, "both", thefile, oflux, temps, repro=reprod)
+        Hf = t_flux_H + nt_flux_H
+        Df = t_flux_D + nt_flux_D
+    elseif flux_type=="nonthermal"
+        Hf = nt_flux_H
+        Df = nt_flux_D
     else
         println("Invalid escape type: $(flux_type)")
     end
+  
     return 2*(Df/Hf) / (ncur[:HDO][1]/ncur[:H2O][1])
 end
 
@@ -349,13 +364,12 @@ function Tpiecewise(z::Float64, Tsurf, Ttropo, Texo, E="")
 end
 
 # WATER ========================================================================
-# 1st term is a conversion factor to convert to (#/cm^3) bceause the 2nd
-# term (from Washburn 1924) gives the value in mmHg
-Psat(T::Float64) = ((133.3*1e-6)/(boltzmannK * T))*(10^(-2445.5646/T + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 - 6.757169))
+# 1st term is a conversion factor to convert to (#/cm^3) from Pa. Source: Marti & Mauersberger 1993
+Psat(T::Float64) = (1e-6/(boltzmannK * T))*(10^(-2663.5/T + 12.537))
 
 # It doesn't matter to get the exact SVP of HDO because we never saturate. 
-# I also tested it, and using the one I derived vs. the one for H2O makes no difference.
-Psat_HDO(T::Float64) = ((133.3*1e-6)/(boltzmannK * T))*(10^(-2445.5646/T + 8.2312*log10(T) - 0.01677006*T + 1.20514e-5*T^2 - 6.757169))
+# However, this function is defined on the offchance someone studies HDO.
+Psat_HDO(T::Float64) = (1e-6/(boltzmannK * T))*(10^(-2663.5/T + 12.537))
 
 
 # Utility ======================================================================

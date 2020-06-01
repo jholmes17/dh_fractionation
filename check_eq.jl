@@ -7,8 +7,8 @@
 #
 # Eryn Cangi
 # 11 September 2018
-# Last edited: 3 January 2020
-# Currently tested for Julia: 0.7
+# Last edited: 29 May 2020
+# Currently tested for Julia: 1.4.1
 ################################################################################
 using HDF5
 using Analysis
@@ -29,16 +29,41 @@ else
 end
 
 # load readfile and altitude array
-lead = "/home/emc/GDrive-CU/Research/Results/"
-rf = lead * FNext * "/converged_" * FNext * ".h5"
+main_results = results_dir * "VarWaterTemp/"
+tradeoff_results = results_dir * "TradeoffPlots/Main Results/"
+sim_rel_path = FNext * "/converged_" * FNext * ".h5"
+
+# Set up the file path, automatically look for the simulation without external 
+# specification of where it might be. 
+# there may be duplicates in both folders but that's fine, it will only check once. 
+if isfile(main_results * sim_rel_path)
+    rf = main_results * sim_rel_path
+elseif isfile(tradeoff_results * sim_rel_path)
+    rf = tradeoff_results * sim_rel_path  
+else
+    throw("Invalid simulation parameters")
+end
+
+
 
 # Calculate the flux ratio =====================================================
 Of = 1.2e8
-Hf = get_flux(:H, "thermal", rf, Of, temparr)
-HDf = Hf + get_flux(:D, "thermal", rf, Of, temparr)
+Hf = get_flux(:H, rf, Of, temparr, therm_only=true)
+HDf = Hf + get_flux(:D, rf, Of, temparr, therm_only=true)
 
-println("O flux: ", Of)
-println("H+D flux: ", HDf)
-println("H flux: ", Hf)
-println("Ratio: ", HDf/Of)
-println()
+# println("O flux: ", Of)
+# println("H+D flux: ", HDf)
+# println("H flux: ", Hf)
+
+if round(HDf/Of) == 2
+    println("Simulation: $(FNext)")
+    println("Equilibrium: YES")
+    println()
+else
+    println("Simulation: $(FNext)")
+    println("Equilibrium: NO")
+    println("Ratio: ", HDf/Of)
+    println()
+end
+
+

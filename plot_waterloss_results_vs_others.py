@@ -17,6 +17,9 @@ plt.rcParams['axes.labelsize'] = 22
 plt.rcParams['xtick.labelsize'] = 18
 plt.rcParams['ytick.labelsize'] = 18
 
+research_dir = "/home/emc/GDrive-CU/Research/FractionationModeling/"
+results_dir = research_dir+"Results/"
+
 studies = ["Yung+ 1988", "Krasnopolsky 2000", "Lammer+ 2003", "Kurokawa+ 2014", "Villanueva+ 2015", "Alsaeed+ 2019", "This work"]
 dummyind = [0, 1, 2, 3, 4, 5, 6]
 my_water = [66, 123]  # TODO: fill in my water results here.
@@ -47,5 +50,5 @@ plt.yticks(dummyind, labels=studies)
 plt.title("Study comparison of lost water")
 plt.xlabel("Water lost (m GEL)")
 
-plt.savefig("../Results/ALL STUDY PLOTS/water_loss_comparison.png", bbox_inches="tight")
-plt.savefig("../Results/VarWaterTemp/water_loss_comparison.png", bbox_inches="tight")
+plt.savefig(results_dir+"ALL STUDY PLOTS/water_loss_comparison.png", bbox_inches="tight")
+plt.savefig(results_dir+"VarWaterTemp/water_loss_comparison.png", bbox_inches="tight")

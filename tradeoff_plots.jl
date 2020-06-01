@@ -7,7 +7,8 @@
 
 # Eryn Cangi
 # 5 April 2019
-# Currently tested for Julia: 0.7
+# Last edited: 21 April 2020
+# Currently tested for Julia: 1.4.1
 ################################################################################
 using PyPlot
 using HDF5
@@ -21,8 +22,6 @@ using DataFrames
 include("PARAMETERS.jl")
 
 # fundamental constants ========================================================
-DH = 5.5 * 1.6e-4               # SMOW value from Yung 1988
-
 global tvals = Dict("surface"=>[150.0, 160.0, 170.0, 180.0, 190.0, 200.0, 210.0, 220.0, 
                                 230.0, 240.0, 250.0, 260.0, 270.0],
                     "tropopause"=>[100.0, 110.0, 120.0, 130.0, #70.0, 80.0, 90.0, 
@@ -33,7 +32,7 @@ global Oflux_vals = ["8e7", "9e7", "1.0e8", "1.1e8", "1.2e8", "1.3e8",
                             "1.4e8", "1.5e8", "1.6e8"]
 
 global watervals = [1, 10, 25, 50, 100]#, 150]
-global watervals_str = ["1.33e-5", "1.41e-4", "3.72e-4", "8.2e-4", "2.89e-3"]#, "1.358e-2"]
+global watervals_str = ["1.32e-5", "1.38e-4", "3.63e-4", "8.05e-4", "2.76e-3"]#, "1.358e-2"]
 
 # nominal value plot location or index, 1-indexed for Julia
 global nom_i_julia = Dict("exobase"=>meanTe, "tropopause"=>meanTt, "surface"=>meanTs, 
@@ -101,7 +100,7 @@ function DH_alt_prof_plot(DHproflist, exps, v, s, optext="", optlegend="")
     end
 
     # set savepath
-    plotpath = mainpath*v*"_plots/"*s
+    plotpath = tradeoff_results_dir*v*"_plots/"*s
     savepath = plotpath*v*optext*"_DH_prof.png"
     legend(fontsize=12, bbox_to_anchor=[1.01,1], loc=2, borderaxespad=0)
     savefig(savepath, bbox_inches="tight")
@@ -206,7 +205,7 @@ function CO_O2_plot(xvals, ydict, xlab, pathkey, meanX, s, tempkey="")
         [l.set_visible(false) for (i,l) in enumerate(ax.xaxis.get_ticklabels()) if i % 2 != 0]
     end
 
-    plotpath = mainpath*pathkey*"_plots/"*s
+    plotpath = tradeoff_results_dir*pathkey*"_plots/"*s
     savepath = plotpath*lookupkey*"_CO_and_O2.png"
     savefig(savepath, bbox_inches="tight")
     close(fig)
@@ -216,11 +215,11 @@ end
 
 function makenomdict(abs_or_mr)
     #=
-    TODO: check this isn't broken
+    TODO: fillmein
     =#
 
     # get the current array
-    tfile = mainpath*"temp_$(meanTsint)_$(meanTtint)_$(meanTeint)/converged_temp_$(meanTsint)_$(meanTtint)_$(meanTeint).h5"
+    tfile = tradeoff_results_dir*"temp_$(meanTsint)_$(meanTtint)_$(meanTeint)/converged_temp_$(meanTsint)_$(meanTtint)_$(meanTeint).h5"
     ncur =  get_ncurrent(tfile)
     N0 = abs_or_mr == "abs" ? 1 : n_tot(ncur, 0, n_alt_index)
     Ntop = abs_or_mr == "abs" ? 1 : n_tot(ncur, zmax, n_alt_index)
@@ -251,8 +250,8 @@ function makenomdict(abs_or_mr)
     # O3 mixing ratio
     append!(nomTdict["O3"], sum(ncur[:O3])*2e5) # gets O3 in #/cm^2
     # H and D fluxes
-    Hf = get_flux(:H, "thermal", tfile, 1.2e8, meantemps)
-    Df = get_flux(:D, "thermal", tfile, 1.2e8, meantemps)
+    Hf = get_flux(:H, tfile, 1.2e8, meantemps, therm_only=true)
+    Df = get_flux(:D, tfile, 1.2e8, meantemps, therm_only=true)
     append!(nomTdict["Hflux"], Hf)
     append!(nomTdict["Dflux"], Df)
     # fractionation factor 
@@ -265,7 +264,7 @@ end
 
 # Analyzation functions (main routines) ----------------------------------------
 
-function analyze_water(abs_or_mr, allDbearers, make_plots=false, path=mainpath)
+function analyze_water(abs_or_mr, allDbearers, make_plots=false, path=tradeoff_results_dir)
     # Establish parameters, filenames, etc
     wfilelist = [path*"water_"*w*"/converged_water_"*w*".h5" for w in watervals_str]
     temps = [meanTs, meanTt, meanTe]
@@ -317,8 +316,8 @@ function analyze_water(abs_or_mr, allDbearers, make_plots=false, path=mainpath)
         # O3 in #/cm^2, used to convert to μm-atm later
         append!(wdict["O3"], sum(ncur[:O3])*2e5) # gets O3 in #/cm^2
         # H and D fluxes
-        Hf = get_flux(:H, "thermal", wfile, oflux, temps)
-        Df = get_flux(:D, "thermal", wfile, oflux, temps)
+        Hf = get_flux(:H, wfile, oflux, temps, therm_only=true)
+        Df = get_flux(:D, wfile, oflux, temps, therm_only=true)
         append!(wdict["Hflux"], Hf)
         append!(wdict["Dflux"], Df)
         # fractionation factor 
@@ -341,7 +340,7 @@ function analyze_water(abs_or_mr, allDbearers, make_plots=false, path=mainpath)
     return wdict
 end
 
-function analyze_Oflux(abs_or_mr, allDbearers, make_plots=false, path=mainpath)
+function analyze_Oflux(abs_or_mr, allDbearers, make_plots=false, path=tradeoff_results_dir)
     # Establish important parameters, files, etc
     Ofluxvals = [8e7, 9e7, 1e8, 1.1e8, 1.2e8, 1.3e8, 1.4e8, 1.5e8, 1.6e8]
     Ofluxvals_str = ["8e7", "9e7", "1.0e8", "1.1e8", "1.2e8", "1.3e8", "1.4e8", "1.5e8", "1.6e8"]
@@ -396,8 +395,8 @@ function analyze_Oflux(abs_or_mr, allDbearers, make_plots=false, path=mainpath)
         # O3 in #/cm^2, used to convert to μm-atm later
         append!(odict["O3"], sum(ncur[:O3])*2e5) # gets O3 in #/cm^2
         # H and D fluxes
-        Hf = get_flux(:H, "thermal", ofile, oflux, temps)
-        Df = get_flux(:D, "thermal", ofile, oflux, temps)
+        Hf = get_flux(:H, ofile, oflux, temps, therm_only=true)
+        Df = get_flux(:D, ofile, oflux, temps, therm_only=true)
         append!(odict["Hflux"], Hf)
         append!(odict["Dflux"], Df)
         # fractionation factor 
@@ -421,7 +420,7 @@ function analyze_Oflux(abs_or_mr, allDbearers, make_plots=false, path=mainpath)
     return odict
 end
     
-function analyze_T(abs_or_mr, allDbearers, make_plots=false, path=mainpath)
+function analyze_T(abs_or_mr, allDbearers, make_plots=false, path=tradeoff_results_dir)
     #=
     abs_or_mr: whether using the absolute abundance file or mixing ratio file
     allDbearers: whether to plot extra D-bearing species
@@ -503,8 +502,8 @@ function analyze_T(abs_or_mr, allDbearers, make_plots=false, path=mainpath)
             # O3 in #/cm^2, used to convert to μm-atm later
             append!(tdict["O3"], sum(ncur[:O3])*2e5) # gets O3 in #/cm^2
             # H and D fluxes
-            Hf = get_flux(:H, "thermal", tfile, oflux, temps)
-            Df = get_flux(:D, "thermal", tfile, oflux, temps)
+            Hf = get_flux(:H, tfile, oflux, temps, therm_only=true)
+            Df = get_flux(:D, tfile, oflux, temps, therm_only=true)
             append!(tdict["Hflux"], Hf)
             append!(tdict["Dflux"], Df)
             # fractionation factor 
@@ -596,7 +595,7 @@ function make_water_plots(water_x, d, DHdata, q, nom_i, s)
         end
 
         # set savepath
-        plotpath = mainpath*"water_plots/" * s
+        plotpath = tradeoff_results_dir*"water_plots/" * s
         savepath = "water_"*i*".png"
 
         savefig(plotpath*savepath, bbox_inches="tight")
@@ -675,7 +674,7 @@ function make_Oflux_plots(phiO, phiO_str, d, DHdata, q, nom_i, s)
         end
 
         # set savepath
-        plotpath = mainpath*"Oflux_plots/"*s
+        plotpath = tradeoff_results_dir*"Oflux_plots/"*s
         savepath = plotpath*"O_flux_"*i*".png"
         
         savefig(savepath, bbox_inches="tight")
@@ -780,7 +779,7 @@ function make_T_plots(T, T_str, d, DHdata, exp, q, nomT, s)
         end
 
         # set savepath
-        plotpath = mainpath*"temp_plots/"*s
+        plotpath = tradeoff_results_dir*"temp_plots/"*s
         savepath = plotpath*join(["temp", exp], "_")*"_"*i*".png"
         savefig(savepath, bbox_inches="tight")
         close(fig)
@@ -840,7 +839,8 @@ function make_Oflux_main_plots(output_MR, output_abs)
 
     ax1.set_xlabel(L"\Phi_O"*L" (cm$^{-2}s^{-1}$)")
     ax1.set_ylabel(L"($X_{model}$-$X_{obs}$)/$\sigma$")
-    savefig(mainpath*"output_vs_data_oflux.png", bbox_inches="tight")
+    savefig(tradeoff_results_dir*"output_vs_data_oflux.png", bbox_inches="tight")
+    savefig(results_dir*"ALL STUDY PLOTS/output_vs_data_oflux.png", bbox_inches="tight")
 
 
     # second plot: H2, HD, H, D, Hflux, Dflux ----------------------------------
@@ -888,7 +888,8 @@ function make_Oflux_main_plots(output_MR, output_abs)
     ax2.set_xlabel(L"\Phi_O"*L" (cm$^{-2}s^{-1}$)")
     ax2.set_ylabel(L"X/X$_{nominal}$")
     #ax2.legend(bbox_to_anchor=(1.05, 1))
-    savefig(mainpath*"compare_nominal_Oflux.png", bbox_inches="tight")
+    savefig(tradeoff_results_dir*"compare_nominal_Oflux.png", bbox_inches="tight")
+    savefig(results_dir*"ALL STUDY PLOTS/compare_nominal_Oflux.png", bbox_inches="tight")
 
     # # third plot: f ----------------------------------------------------------
     # only for water and O flux - the others are done in a panel
@@ -907,7 +908,8 @@ function make_Oflux_main_plots(output_MR, output_abs)
     ax.axvline(nom_i_py["Oflux"], color=medgray, zorder=5)
 
         
-    savefig(mainpath*"f_tradeoff_Oflux.png", bbox_inches="tight")
+    savefig(tradeoff_results_dir*"f_tradeoff_Oflux.png", bbox_inches="tight")
+    savefig(results_dir*"ALL STUDY PLOTS/f_tradeoff_Oflux.png", bbox_inches="tight")
 end
 
 # Water plots ------------------------------------------
@@ -928,10 +930,10 @@ function make_water_Hspecies_plot(output_dict, abs_or_mr)
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
-    rcParams["font.size"] = 22
-    rcParams["axes.labelsize"]= 24
-    rcParams["xtick.labelsize"] = 22
-    rcParams["ytick.labelsize"] = 22
+    rcParams["font.size"] = 18
+    rcParams["axes.labelsize"]= 20
+    rcParams["xtick.labelsize"] = 18
+    rcParams["ytick.labelsize"] = 18
 
     # Make the plot 
     fig, ax = subplots(figsize=(7,6))
@@ -966,7 +968,7 @@ function make_water_Hspecies_plot(output_dict, abs_or_mr)
 
     # Text on plots 
     ax.set_xscale("log")
-    ax.text(11, 0.9, "Global\nmean", color=medgray, ha="left", va="top")
+    ax.text(11, 0.9, "Standard\ntemperature", color=medgray, ha="left", va="top")
     ax.text(1, 0.99, "H", color=c[1], ha="left", va="top")
     ax.text(1, 0.87, "D", color=c[2], ha="left", va="top")
     ax.text(1, 1.02, L"H_2", color=c[3], ha="left", va="top")
@@ -985,8 +987,9 @@ function make_water_Hspecies_plot(output_dict, abs_or_mr)
     # ax2.plot(xvals[ex], DO2topdiff, marker="o", color="purple", zorder=10)
 
     ax.set_xlabel(L"total atmospheric water (pr $\mu$m)")
-    ax.set_ylabel(L"X/X(\overline{T}_{global})")
-    savefig(mainpath*"compare_nominal_water_"*abs_or_mr*".png", bbox_inches="tight")
+    ax.set_ylabel(L"X/X(\overline{T}_{standard})")
+    savefig(tradeoff_results_dir*"compare_nominal_water_"*abs_or_mr*".png", bbox_inches="tight")
+    savefig(results_dir*"ALL STUDY PLOTS/compare_nominal_water_"*abs_or_mr*".png", bbox_inches="tight")
 end
 
 function make_water_output_vs_data(output_MR, output_abs)
@@ -995,10 +998,10 @@ function make_water_output_vs_data(output_MR, output_abs)
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
-    rcParams["font.size"] = 22
-    rcParams["axes.labelsize"]= 24
-    rcParams["xtick.labelsize"] = 22
-    rcParams["ytick.labelsize"] = 22
+    rcParams["font.size"] = 18
+    rcParams["axes.labelsize"]= 20
+    rcParams["xtick.labelsize"] = 18
+    rcParams["ytick.labelsize"] = 18
 
 
     # first plot - compare with data -------------------------------------------
@@ -1026,14 +1029,15 @@ function make_water_output_vs_data(output_MR, output_abs)
 
     # Text on plots 
     ax.set_xscale("log")
-    ax.text(10.2, 2.5, "Global\nmean", color=medgray, ha="left", va="top")
+    ax.text(10.2, 2.5, "Standard\ntemperature", color=medgray, ha="left", va="top")
     ax.text(1, -2.4, "CO", color=c1[1], ha="left", va="top")
     ax.text(20, -2.5, L"O$_2$", color=c1[2], ha="left", va="top")
     ax.text(1, -0.5, L"H$_2$", color=c1[3], ha="left", va="top")
     ax.text(1, 2.5, L"O$_3$", color=c1[4], ha="left", va="top")
     ax.set_xlabel(L"total atmospheric water (pr $\mu$m)")
     ax.set_ylabel(L"($X_{model}$-$X_{obs}$)/$\sigma$")
-    savefig(mainpath*"output_vs_data_water.png", bbox_inches="tight")
+    savefig(tradeoff_results_dir*"output_vs_data_water.png", bbox_inches="tight")
+    savefig(results_dir*"ALL STUDY PLOTS/output_vs_data_water.png", bbox_inches="tight")
 end
 
 function make_water_f_plot(output_MR)
@@ -1045,22 +1049,23 @@ function make_water_f_plot(output_MR)
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
-    rcParams["font.size"] = 22
-    rcParams["axes.labelsize"]= 24
-    rcParams["xtick.labelsize"] = 22
-    rcParams["ytick.labelsize"] = 22
+    rcParams["font.size"] = 18
+    rcParams["axes.labelsize"]= 20
+    rcParams["xtick.labelsize"] = 18
+    rcParams["ytick.labelsize"] = 18
 
 
     ax.plot(watervals, output_MR["f"], marker="o", color="cornflowerblue", zorder=10)
     ax.axvline(nom_i_py["water"], color=medgray, zorder=5)
 
-    ax.text(9, 0.0019, "Global\nmean", color=medgray, ha="right", va="bottom")
+    ax.text(9, 0.0019, "Standard\ntemperature", color=medgray, ha="right", va="bottom")
     ax.set_xscale("log")
 
     ax.set_ylabel(L"$f$", color="black")
     ax.set_xlabel(L"total atmospheric water (pr $\mu$m)")
     
-    savefig(mainpath*"f_vs_water.png", bbox_inches="tight")
+    savefig(tradeoff_results_dir*"f_vs_water.png", bbox_inches="tight")
+    savefig(results_dir*"ALL STUDY PLOTS/f_vs_water.png", bbox_inches="tight")
 end
 
 # Temp plots -------------------------------------------
@@ -1111,10 +1116,10 @@ function make_T_Hspecies_plot(output_dict, abs_or_mr)
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
-    rcParams["font.size"] = 22
-    rcParams["axes.labelsize"]= 24
-    rcParams["xtick.labelsize"] = 22
-    rcParams["ytick.labelsize"] = 22
+    rcParams["font.size"] = 18
+    rcParams["axes.labelsize"]= 20
+    rcParams["xtick.labelsize"] = 18
+    rcParams["ytick.labelsize"] = 18
 
     # Make the plot 
     fig, ax = subplots(1, 3, sharex=false, sharey=false, figsize=(21, 5))
@@ -1141,7 +1146,7 @@ function make_T_Hspecies_plot(output_dict, abs_or_mr)
         ax[i].plot(tvals[ex], Dfdiff, marker="v", ms=sz, color=c[6], zorder=10, label=L"\phi_D")
         # nominal value
         ax[i].axvline(nom_i_py[ex], color=medgray, zorder=5)
-        ax[i].text(gmean_txt_loc[ex][1], gmean_txt_loc[ex][2], "Global\nmean", 
+        ax[i].text(gmean_txt_loc[ex][1], gmean_txt_loc[ex][2], "Standard\ntemperature", 
                    color=medgray, ha="left", va="top")
         ax[i].axhline(1, color=medgray, zorder=5)
 
@@ -1168,7 +1173,7 @@ function make_T_Hspecies_plot(output_dict, abs_or_mr)
 
         ax[i].set_xlabel(ex*" temperature (K)")
     end
-    ax[1].set_ylabel(L"X/X(\overline{T}_{global})")
+    ax[1].set_ylabel(L"X/X(\overline{T}_{standard})")
     ax[1].text(150, 1.4, "a", color="black", weight="bold", va="top", 
                ha="center", fontsize=26)#
     ax[2].text(100, 1.9, "b", color="black", weight="bold", va="top", 
@@ -1186,7 +1191,8 @@ function make_T_Hspecies_plot(output_dict, abs_or_mr)
     # ax.plot(xvals[ex], HDO2topdiff, marker="o", color="blue", zorder=10)
     # ax.plot(xvals[ex], DO2topdiff, marker="o", color="purple", zorder=10)
     
-    savefig(mainpath*"compare_nominal_temps_"*abs_or_mr*".png", bbox_inches="tight")
+    savefig(tradeoff_results_dir*"compare_nominal_temps_"*abs_or_mr*".png", bbox_inches="tight")
+    savefig(results_dir*"ALL STUDY PLOTS/compare_nominal_temps_"*abs_or_mr*".png", bbox_inches="tight")
 end
 
 function make_T_f_plot(output_MR)
@@ -1201,10 +1207,10 @@ function make_T_f_plot(output_MR)
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
-    rcParams["font.size"] = 22
-    rcParams["axes.labelsize"]= 24
-    rcParams["xtick.labelsize"] = 22
-    rcParams["ytick.labelsize"] = 22
+    rcParams["font.size"] = 18
+    rcParams["axes.labelsize"]= 20
+    rcParams["xtick.labelsize"] = 18
+    rcParams["ytick.labelsize"] = 18
 
     # Dictionaries for where to put things for each experiment 
     exps = ["surface", "tropopause", "exobase"]
@@ -1226,7 +1232,7 @@ function make_T_f_plot(output_MR)
         # plot
         ax[i].plot(tvals[ex], output_MR[ex]["f"], marker="o", color=maincol, zorder=10)
         ax[i].axvline(nom_i_py[ex], color=medgray, zorder=5)
-        ax[i].text(gmean_txt_loc[ex][1], gmean_txt_loc[ex][2], "Global\nmean", 
+        ax[i].text(gmean_txt_loc[ex][1], gmean_txt_loc[ex][2], "Standard\ntemperature", 
                    color=medgray, ha="left", va="top")
 
         # axis format
@@ -1237,19 +1243,17 @@ function make_T_f_plot(output_MR)
         ax[i].set_xticks(xt_args[ex][1]:xt_args[ex][2]:xt_args[ex][3], minor=false)
         ax[i].tick_params(axis="y", labelcolor=maincol, which="both")
         ax[i].tick_params(axis="x", which="both")
-        # setp(ax.get_xticklabels(), fontsize=22)
 
         ax[i].set_yscale("log") 
         ax[i].set_ylim(ylims[ex][1], ylims[ex][2])
         ax[i].set_yticks([1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1])
-        # setp(ax.get_yticklabels(), fontsize=22)
 
         # plot the secondary axis showing increase
         nomdict = makenomdict("mr")
         fdiff = normalize_val(output_MR[ex]["f"], nomdict["f"])
         ax_2 = ax[i].twinx()
         if i==3
-            ax_2.set_ylabel(L"$f$/$f(\overline{T}_{global})$", color=secondcol, fontsize=24)
+            ax_2.set_ylabel(L"$f$/$f(\overline{T}_{standard})$", color=secondcol, fontsize=24)
         end
         ax_2.plot(tvals[ex], fdiff, marker="o", color=secondcol)
         ax_2.tick_params(axis="y", labelcolor=secondcol, which="both")
@@ -1266,7 +1270,7 @@ function make_T_f_plot(output_MR)
     ax[3].text(150, 1, "c", color="black", fontsize=26, weight="bold", va="top")
 
 
-    savefig(mainpath*"f_vs_temps.png", bbox_inches="tight")
+    savefig(tradeoff_results_dir*"f_vs_temps.png", bbox_inches="tight")
 end
 
 function make_T_output_vs_data(output_MR, output_abs)
@@ -1298,10 +1302,10 @@ function make_T_output_vs_data(output_MR, output_abs)
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
-    rcParams["font.size"] = 22
-    rcParams["axes.labelsize"]= 24
-    rcParams["xtick.labelsize"] = 22
-    rcParams["ytick.labelsize"] = 22
+    rcParams["font.size"] = 18
+    rcParams["axes.labelsize"]= 20
+    rcParams["xtick.labelsize"] = 18
+    rcParams["ytick.labelsize"] = 18
 
     fig, ax = subplots(1, 3, sharex=false, sharey=false, figsize=(21, 5))
     subplots_adjust(wspace=0.15)
@@ -1328,7 +1332,7 @@ function make_T_output_vs_data(output_MR, output_abs)
         ax[i].axhline(0, color="black")
 
         # text
-        ax[i].text(mean_text[ex][1], mean_text[ex][2], "Global\nmean", color=medgray, ha="left", va="top")
+        ax[i].text(mean_text[ex][1], mean_text[ex][2], "Standard\ntemperature", color=medgray, ha="left", va="top")
         dfentry = linelbls[linelbls.Exp.==ex, :]
         ax[i].text(dfentry.CO[1][1], dfentry.CO[1][2], "CO", color=c1[1], ha="left", va="top")
         ax[i].text(dfentry.O2[1][1], dfentry.O2[1][2], L"O$_2$", color=c1[2], ha="left", va="top")
@@ -1362,15 +1366,14 @@ function make_T_output_vs_data(output_MR, output_abs)
     ax[2].text(160, 4, "b", color="black", fontsize=26, weight="bold", va="top")
     ax[3].text(350, 4, "c", color="black", fontsize=26, weight="bold", va="top")
     
-    savefig(mainpath*"output_vs_data_temps.png", bbox_inches="tight")      
+    savefig(tradeoff_results_dir*"output_vs_data_temps.png", bbox_inches="tight")
+    savefig(results_dir*"ALL STUDY PLOTS/output_vs_data_temps.png", bbox_inches="tight")      
 end
 
 # Setup and folder Location ====================================================
-# mainpath = "/data/GDrive-CU/Research/Results/TradeoffPlots/Tradeoffs - solar mean/"
-mainpath = "/home/emc/GDrive-CU/Research/Results/"
-println("Enter a folder to use, no slashes (/home/emc/GDrive-CU/Research/Results/<folder>: ")
+println("Enter a folder to use, no slashes (Research/Results/TradeoffPlots/<folder>: ")
 append_me = readline(stdin)
-mainpath = mainpath*append_me*"/"
+tradeoff_results_dir = results_dir*"TradeoffPlots/"*append_me*"/"
 
 makeplots = false   # whether to make the plots that go with each experiment
 other_deuterated = false
@@ -1394,24 +1397,24 @@ T_data_abs = analyze_T("abs", other_deuterated, makeplots)
 
 println("Writing jld storage files")
 if write_new_files
-    wd_mr = jldopen(mainpath*"water_MR_data.jld", "w")
+    wd_mr = jldopen(tradeoff_results_dir*"water_MR_data.jld", "w")
     @write wd_mr water_data_mr
     close(wd_mr)
-    wd_abs = jldopen(mainpath*"water_abs_data.jld", "w")
+    wd_abs = jldopen(tradeoff_results_dir*"water_abs_data.jld", "w")
     @write wd_abs water_data_abs
     close(wd_abs)
 
-    # O_mr = jldopen(result_folder*"O_MR_data.jld", "w")
+    # O_mr = jldopen(tradeoff_results_dir*"O_MR_data.jld", "w")
     # @write O_mr o_data_mr
     # close(O_mr)
-    # O_abs = jldopen(result_folder*"O_abs_data.jld", "w")
+    # O_abs = jldopen(tradeoff_results_dir*"O_abs_data.jld", "w")
     # @write O_abs o_data_abs
     # close(O_abs)
 
-    T_mr = jldopen(mainpath*"T_MR_data.jld", "w")
+    T_mr = jldopen(tradeoff_results_dir*"T_MR_data.jld", "w")
     @write T_mr T_data_mr
     close(T_mr)
-    T_abs = jldopen(mainpath*"T_abs_data.jld", "w")
+    T_abs = jldopen(tradeoff_results_dir*"T_abs_data.jld", "w")
     @write T_abs T_data_abs
     close(T_abs)
 end
@@ -1425,14 +1428,14 @@ end
 
 # Temperature plots
 println("Making temperature plots")
-# make_T_f_plot(T_data_mr)
-# make_T_Hspecies_plot(T_data_mr, "mr")
-# make_T_Hspecies_plot(T_data_abs, "abs")
+make_T_f_plot(T_data_mr)
+make_T_Hspecies_plot(T_data_mr, "mr")
+make_T_Hspecies_plot(T_data_abs, "abs")
 make_T_output_vs_data(T_data_mr, T_data_abs)
 
 # Water plots
-# println("Making water plots")
-# make_water_f_plot(water_data_mr)
-# make_water_Hspecies_plot(water_data_mr, "mr")
-# make_water_Hspecies_plot(water_data_abs, "abs")
-# make_water_output_vs_data(water_data_mr, water_data_abs)
+println("Making water plots")
+make_water_f_plot(water_data_mr)
+make_water_Hspecies_plot(water_data_mr, "mr")
+make_water_Hspecies_plot(water_data_abs, "abs")
+make_water_output_vs_data(water_data_mr, water_data_abs)

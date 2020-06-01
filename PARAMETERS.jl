@@ -7,8 +7,12 @@
 # 
 # Eryn Cangi
 # December 2019
-# Currently tested for Julia: 0.7
+# Last edited: 21 April 2020
+# Currently tested for Julia: 1.4.1
 ################################################################################
+
+research_dir = "/home/emc/GDrive-CU/Research-FF/"
+results_dir = research_dir*"Results/"
 
 # fundamental constants ========================================================
 const boltzmannK = 1.38e-23;    # J/K
@@ -16,6 +20,7 @@ const bigG = 6.67e-11;          # N m^2/kg^2
 const mH = 1.67e-27;            # kg
 const marsM = 0.1075*5.972e24;  # kg
 const radiusM = 3396e5;         # cm
+DH = 5.5 * 1.6e-4               # SMOW value from Yung 1988
 
 # Altitude grid discretization =================================================
 const alt = convert(Array, (0:2e5:250e5))
@@ -27,7 +32,7 @@ n_alt_index=Dict([z=>clamp((i-1),1, length(alt)-2) for (i, z) in enumerate(alt)]
 
 hygropause_alt = 40e5
 
-# Temperatures =================================================================
+# Temperatures and water stuff =================================================
 global meanTs = 216.0
 global meanTt = 130.0
 global meanTe = 205.0
@@ -43,6 +48,8 @@ global lowTt = 100.0
 global hiTt = 160.0
 global lowTe = 150.0
 global hiTe = 250.0
+
+MR_mean_water = 1.38e-4
 
 # Lists ========================================================================
 const fullspecieslist = [:CO2, :O2, :O3, :H2, :OH, :HO2, :H2O, :H2O2, :O, :CO,

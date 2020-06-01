@@ -6,8 +6,8 @@
 # 
 # Eryn Cangi
 # May 2019
-# Last edited: 3 January 2020
-# Currently tested for Julia: 0.7
+# Last edited: 21 April 2020
+# Currently tested for Julia: 1.4.1
 ################################################################################
 
 using PyCall
@@ -35,10 +35,10 @@ function plot_T_6panel(base, profile_array)
     rcparams = PyCall.PyDict(matplotlib."rcParams")
     rcparams["font.sans-serif"] = ["Louis George Caf?"]
     rcparams["font.monospace"] = ["FreeMono"]
-    rcparams["font.size"] = 22
-    rcparams["axes.labelsize"]= 24
-    rcparams["xtick.labelsize"] = 22
-    rcparams["ytick.labelsize"] = 22
+    rcparams["font.size"] = 18
+    rcparams["axes.labelsize"]= 20
+    rcparams["xtick.labelsize"] = 18
+    rcparams["ytick.labelsize"] = 18
 
     alt = (0:2e5:zmax)
 
@@ -51,12 +51,12 @@ function plot_T_6panel(base, profile_array)
     meancol = "xkcd:cerulean blue"
     for (el, tit) in zip(profile_array, titles)
         ax[j, i].plot([Tpiecewise(a, meanTs, meanTt, meanTe) for a in alt], 
-                      alt/1e5, color=meancol, linestyle="--", label="Global mean")
+                      alt/1e5, color=meancol, linestyle="--", label="Standard profile")
         ax[j, i].plot([Tpiecewise(a, el[1], el[2], el[3]) for a in alt], 
-                       alt/1e5, color=modcol, label="Modified") 
-        ax[j, i].set_title(tit, fontsize=20)
+                       alt/1e5, color=modcol, label="Alternate profiles") 
+        ax[j, i].set_title(tit, fontsize=18)
         ax[j, i].set_xticks([100, 150, 200, 250])
-        ax[j, i].tick_params(axis="x", labelbottom=true, labelsize=20)
+        ax[j, i].tick_params(axis="x", labelbottom=true, labelsize=18)
         plot_bg(ax[j, i])
 
         if i==1
@@ -83,7 +83,7 @@ function plot_T_6panel(base, profile_array)
     ax[1, 1].plot(meanTe, 250, marker="o", color=modcol)
     ax[1, 1].plot(meanTt, 80, marker="o", color=modcol)
     ax[1, 1].plot(lowTs, 0, marker="o", color=modcol)
-    legend(bbox_to_anchor=(1.05, -0.07), fontsize=20)
+    legend(bbox_to_anchor=(1.05, -0.07), fontsize=16)
     
     savefig(base*"ALL STUDY PLOTS/temp_profiles.png", bbox_inches="tight")
     savefig(base*"VarWaterTemp/temp_profiles.png", bbox_inches="tight")
@@ -102,10 +102,10 @@ function plot_one_profile(Tp, titletext, base)
     rcParams = PyCall.PyDict(matplotlib."rcParams")
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
-    rcParams["font.size"] = 22
-    rcParams["axes.labelsize"]= 24
-    rcParams["xtick.labelsize"] = 22
-    rcParams["ytick.labelsize"] = 22
+    rcParams["font.size"] = 18
+    rcParams["axes.labelsize"]= 20
+    rcParams["xtick.labelsize"] = 18
+    rcParams["ytick.labelsize"] = 18
 
     alt = (0:2e5:zmax)
 
@@ -183,9 +183,9 @@ function plot_all_water_profs(Tp, hygropause_alt, base, resultsfolder)
     plot_bg(ax)
     rcParams = PyDict(matplotlib."rcParams")
     rcParams["font.size"] = 16
-    rcParams["axes.labelsize"]= 24
-    rcParams["xtick.labelsize"] = 22
-    rcParams["ytick.labelsize"] = 22
+    rcParams["axes.labelsize"]= 20
+    rcParams["xtick.labelsize"] = 18
+    rcParams["ytick.labelsize"] = 18
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
 
@@ -221,7 +221,7 @@ function plot_all_water_profs(Tp, hygropause_alt, base, resultsfolder)
     ax.text(10.0^(-4.8), -20, "1", color=cols[1], ha="right", fontsize=fs["smtxt"])
     ax.text(10.0^(-3.8), -20, "10", color=cols[2], ha="right", fontsize=fs["smtxt"])
     ax.text(10.0^(-3.25), -20, "25", color=cols[3], ha="right", fontsize=fs["smtxt"])
-    ax.text(10.0^(-2.7), -20, "50", color=cols[4], ha="right", fontsize=fs["smtxt"])
+    ax.text(10.0^(-3), -20, "50", color=cols[4], ha="center", fontsize=fs["smtxt"])
     ax.text(10.0^(-2.6), -20, "100+", color=cols[5], fontsize=fs["smtxt"])
     ax.text(10^(-7), -20, L"Column pr $\mathrm{\mu}$m:", fontsize=fs["mid"], color="#555555")
     ax.text(1e-6, 55, "Saturation curve", color="#666666")
@@ -239,14 +239,11 @@ function plot_all_water_profs(Tp, hygropause_alt, base, resultsfolder)
     savefig(base*resultsfolder*"water_profiles.png", bbox_inches="tight")
 end
 
-base = "/home/emc/GDrive-CU/Research/Results/"
-
 Tprofs = [[lowTs, meanTt, meanTe], [meanTs, lowTt, meanTe], [meanTs, meanTt, lowTe], 
                  [hiTs, meanTt, meanTe], [meanTs, hiTt, meanTe], [meanTs, meanTt, hiTe]]
 
-plot_T_6panel(base, Tprofs)
+plot_T_6panel(results_dir, Tprofs)
 
-plot_one_profile([meanTs, meanTt, meanTe], "Global mean temperature", base)
+plot_one_profile([meanTs, meanTt, meanTe], "Standard temperature", results_dir)
 
-plot_all_water_profs(meantemps, hygropause_alt, base, "VarWaterTemp/")
-# plot_all_water_profs([216.0, 108.0, 205.0], 40e5, "/home/emc/GDrive-CU/Research/Results/VarWaterTemp_oldtemps/SolarMean/")
+plot_all_water_profs(meantemps, hygropause_alt, results_dir, "VarWaterTemp/")

@@ -7,9 +7,8 @@
 # 
 # Eryn Cangi
 # June 2019
-# Last edited: 3 Janauary 2020
-# Testing status: YELLOW (changes made, but untested)
-# Currently tested for Julia: 0.7
+# Last edited: 21 April 2020
+# Currently tested for Julia: 1.4.1
 ################################################################################
 
 using PyCall
@@ -95,5 +94,4 @@ end
 # =============================================================================
 
 # make_temp_3panel(200)
-base = "/home/emc/GDrive-CU/Research/Results/"
-make_temp_3panel(base)
+make_temp_3panel(results_dir)
