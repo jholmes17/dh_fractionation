@@ -45,7 +45,7 @@ function plot_water_loss(f_therm, f_both, f_therm_range=nothing, f_both_range=no
     cur_h2o = range(20, stop=30, length=11)
 
     # make plot look nice
-    fig = figure(figsize=(6,4))
+    fig = figure(figsize=(7,5))
     rcParams = PyCall.PyDict(matplotlib."rcParams")
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = "Louis George Caf?"
@@ -57,8 +57,8 @@ function plot_water_loss(f_therm, f_both, f_therm_range=nothing, f_both_range=no
     ax = gca()
     plot_bg(ax)
     xlabel("Current exchangeable water (m GEL)")
-    ylabel("Water lost to space (m GEL)")
-    title("Water lost since 4.5 Ga")
+    ylabel("Total water escape (m GEL)")
+    # title("Water lost since 4.5 Ga")
 
     # plot 
     blues = get_grad_colors(2, "Blues", strt=0.5)
@@ -106,6 +106,7 @@ function plot_water_loss(f_therm, f_both, f_therm_range=nothing, f_both_range=no
     text(22, 68, "thermal escape only", rotation=23, color=blues[1, :])
 
     savefig(results_dir*"ALL STUDY PLOTS/h2oloss.png", bbox_inches="tight")
+    savefig(results_dir*"MainCases/h2oloss.png", bbox_inches="tight")
 end
 
 function plot_simple_water_loss(cur_h2o=25)

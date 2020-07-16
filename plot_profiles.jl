@@ -137,19 +137,19 @@ function plot_one_profile(Tp, titletext, base)
     savefig(base*"VarWaterTemp/"*savename, bbox_inches="tight")
 end
 
-function plot_all_water_profs(Tp, hygropause_alt, base, resultsfolder)
+function plot_all_water_profs(Tp, hygropause_alt, base, resultsfolder; plot_HDO=true)
     #=
-    Plots the various water profiles al together.
+    Plots the various water profiles all together.
 
     Tp: a vector of the three temperatures
     hygropause_alt: altitude of the hygropause in cm
     base: Results folder (general)
     resultsfolder: actual folder containing results, located within "base"
+    plot_HDO: whether to plot HDO on the plot. default true.
     =#
 
     Temp(z::Float64) = Tpiecewise(z, Tp[1], Tp[2], Tp[3])
-    n_current = get_ncurrent("converged.h5")
-    DH = 5.5*1.6e-4
+    n_current = get_ncurrent("converged_250km_atmosphere.h5")
 
     # modify n_current with deuterated species profiles ============================
     n_current[:HDO] = n_current[:H2O] * DH
@@ -179,7 +179,7 @@ function plot_all_water_profs(Tp, hygropause_alt, base, resultsfolder)
     H2Osatfrac = H2Osat./map(z->n_tot(n_current, z), alt)  # get SVP as fraction of total atmo
 
     # Make the plot 
-    fig, ax = subplots(figsize=(6,4))
+    fig, ax = subplots(figsize=(7,5))
     plot_bg(ax)
     rcParams = PyDict(matplotlib."rcParams")
     rcParams["font.size"] = 16
@@ -188,10 +188,11 @@ function plot_all_water_profs(Tp, hygropause_alt, base, resultsfolder)
     rcParams["ytick.labelsize"] = 18
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
+    fs = Dict("smtxt"=>14, "lbl"=>20, "tick"=>18, "mid"=>16)
 
     waterfolders = search_subfolders(base*resultsfolder, r"water_\d.+")
     waters = sort([parse(Float64, match(r"\d.+", w).match) for w in waterfolders])
-    cols = ["#74a9cf", "#3690c0", "#0570b0","#034e7b", "#013554"]
+    cols = ["#74a9cf", "#3690c0", "#0570b0","#034e7b", "#013554"] # colors for each water profile
     prum = [100, 50, 25, 10, 1] # It's backwards because the colors are 
     j = 1
     for MR in waters
@@ -200,50 +201,72 @@ function plot_all_water_profs(Tp, hygropause_alt, base, resultsfolder)
         H2Oinitfrac = [H2Oinitfrac;   # ensures no supersaturation
                        fill(minimum(H2Osatfrac), length(alt)-2-length(H2Oinitfrac))]
 
-        #make profile constant in the lower atmosphere (well-mixed)
+        # make profile constant in the lower atmosphere (well-mixed)
         H2Oinitfrac[findall(x->x<hygropause_alt, alt)] .= MR
  
-        # semilogx(H2Oinitfrac, alt[2:end-1]./1e5, color=cols[j])
         # restrict the initial water fraction to be below the saturation vapor pressure curve
         for i in [1:length(H2Oinitfrac);]
             H2Oinitfrac[i] = H2Oinitfrac[i] < H2Osatfrac[i+1] ? H2Oinitfrac[i] : H2Osatfrac[i+1]
         end
         
+        # Plot it 
         ax.semilogx(H2Oinitfrac, alt[2:end-1]./1e5, color=cols[j], linewidth=2)
-
-        H2O_per_cc = sum([MR; H2Oinitfrac] .* map(z->n_tot(n_current, z), alt[1:end-1]))
-        H2Oprum = (H2O_per_cc * dz) * (18/1) * (1/6.02e23) * (1/1) * (1e4/1)
-        # println(H2Oprum)
+        if plot_HDO
+            HDOinitfrac = H2Oinitfrac * DH  # initial profile for HDO
+            ax.semilogx(HDOinitfrac, alt[2:end-1]./1e5, color=cols[j], linewidth=2, linestyle=":")
+        end
         j += 1
     end
-    
-    fs = Dict("smtxt"=>14, "lbl"=>20, "tick"=>18, "mid"=>16)
-    ax.text(10.0^(-4.8), -20, "1", color=cols[1], ha="right", fontsize=fs["smtxt"])
-    ax.text(10.0^(-3.8), -20, "10", color=cols[2], ha="right", fontsize=fs["smtxt"])
-    ax.text(10.0^(-3.25), -20, "25", color=cols[3], ha="right", fontsize=fs["smtxt"])
-    ax.text(10.0^(-3), -20, "50", color=cols[4], ha="center", fontsize=fs["smtxt"])
-    ax.text(10.0^(-2.6), -20, "100+", color=cols[5], fontsize=fs["smtxt"])
-    ax.text(10^(-7), -20, L"Column pr $\mathrm{\mu}$m:", fontsize=fs["mid"], color="#555555")
-    ax.text(1e-6, 55, "Saturation curve", color="#666666")
 
-    ax.set_xlabel(L"H$_2$O Mixing ratio", fontsize=fs["lbl"])
+    if plot_HDO
+        withHDO = "_with_HDO"
+        ax.set_xlim(left=1e-11, right=1e-2)
+        ax.set_xticks([1e-11, 1e-10, 1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2])
+        text_x = 1e-11
+        ax.text(10.0^(-7.9), -20, "A", color=cols[1], ha="center", fontsize=fs["smtxt"])
+        ax.text(10.0^(-6.8), -20, "B", color=cols[2], ha="right", fontsize=fs["smtxt"])
+        ax.text(10.0^(-6.3), -20, "C", color=cols[3], ha="right", fontsize=fs["smtxt"])
+        ax.text(10.0^(-6.1), -20, "D", color=cols[4], ha="center", fontsize=fs["smtxt"])
+        ax.text(10.0^(-5.8), -20, "E", color=cols[5], fontsize=fs["smtxt"])
+        ax.text(10^(-10.5), 150, "HDO", color=medgray)
+    else
+        withHDO = ""
+        text_x = 1e-7
+        ax.set_xlim(left=1e-8, right=1e-2)
+        ax.set_xticks([1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2])
+    end
+    
+    # Place text indicating profiles and other annotations
+    ax.text(10.0^(-4.7), -20, "A", color=cols[1], ha="right", fontsize=fs["smtxt"])
+    ax.text(10.0^(-3.7), -20, "B", color=cols[2], ha="right", fontsize=fs["smtxt"])
+    ax.text(10.0^(-3.2), -20, "C", color=cols[3], ha="right", fontsize=fs["smtxt"])
+    ax.text(10.0^(-3), -20, "D", color=cols[4], ha="center", fontsize=fs["smtxt"])
+    ax.text(10.0^(-2.8), -20, "E", color=cols[5], fontsize=fs["smtxt"])
+    ax.text(text_x, -20, "Water profile:", fontsize=fs["mid"], color=medgray)
+    ax.text(1e-6, 23, "Saturation curve", color=medgray, rotation=-15)
+    ax.text(10^(-7.5), 150, "H"*L"_2"*"O", color=medgray)
+
+    # formatting
+    ax.set_xlabel("Water mixing ratio", fontsize=fs["lbl"])
     ax.set_ylabel("Altitude (km)", fontsize=fs["lbl"])
     ax.set_ylim(-25, 255)
-    ax.set_xlim(left=1e-8, right=1e-2)
     ax.set_yticks([0,50,100,150,200,250])
-    ax.set_xticks([1e-8, 1e-6, 1e-4, 1e-2])
+
     ax.tick_params(which="both", labelsize=fs["tick"])
+    for lbl in ax.xaxis.get_ticklabels()[2:2:end]
+        lbl.set_visible(false)
+    end
     
     # save
-    savefig(base*"ALL STUDY PLOTS/water_profiles.png", bbox_inches="tight")
-    savefig(base*resultsfolder*"water_profiles.png", bbox_inches="tight")
+    savefig(base*"ALL STUDY PLOTS/water_profiles"*withHDO*".png", bbox_inches="tight")
+    savefig(base*resultsfolder*"water_profiles"*withHDO*".png", bbox_inches="tight")
 end
 
 Tprofs = [[lowTs, meanTt, meanTe], [meanTs, lowTt, meanTe], [meanTs, meanTt, lowTe], 
                  [hiTs, meanTt, meanTe], [meanTs, hiTt, meanTe], [meanTs, meanTt, hiTe]]
 
-plot_T_6panel(results_dir, Tprofs)
+# plot_T_6panel(results_dir, Tprofs)
 
-plot_one_profile([meanTs, meanTt, meanTe], "Standard temperature", results_dir)
+# plot_one_profile([meanTs, meanTt, meanTe], "Standard temperature", results_dir)
 
-plot_all_water_profs(meantemps, hygropause_alt, results_dir, "VarWaterTemp/")
+plot_all_water_profs(meantemps, hygropause_alt, results_dir, "MainCases/", plot_HDO=true)

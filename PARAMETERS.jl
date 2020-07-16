@@ -130,6 +130,8 @@ speciesstyle = Dict( # H group
                 # nonreactants
                 :Ar => "-", :N2 => "-",);
                 
+medgray = "#444444"
+
 # Chemistry ====================================================================
 # function to replace three body rates with the recommended expression
 threebody(k0, kinf) = :($k0*M/(1+$k0*M/$kinf)*0.6^((1+(log10($k0*M/$kinf))^2)^-1))

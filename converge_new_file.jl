@@ -1,4 +1,4 @@
-################################################################################
+###############################################################################
 # converge_new_file.jl
 # TYPE: MAIN (main script)
 # WHICH: Equilibrium and perturbation experiments
@@ -9,7 +9,7 @@
 # 2018-2019
 # Last edited: 21 April 2020
 # Currently tested for Julia: 1.4.1
-################################################################################
+###############################################################################
 
 using PyPlot
 using PyCall
@@ -27,9 +27,11 @@ include("PARAMETERS.jl")
 
 function getpos(array, test::Function, n=Any[])
     #= 
-    this function searches through an arbitrarily structured array
-    finding elements that match the test function supplied, and returns a
-    one-dimensional array of the indicies of these elements. 
+    array: Array; any size and dimension
+    test: Function; used to test the elements in the array
+    n: Array; for storing the indices (I think)
+
+    returns: 1D array of elements in array that match test function supplied
     =#
     if !isa(array, Array)
         test(array) ? Any[n] : Any[]
@@ -37,7 +39,6 @@ function getpos(array, test::Function, n=Any[])
         vcat([ getpos(array[i], test, Any[n...,i]) for i=1:size(array)[1] ]...)
     end
 end
-
 
 function getpos(array, value)
     #= 
@@ -48,21 +49,32 @@ function getpos(array, value)
 end
 
 function deletefirst(A, v)
-    # Returns list A with its first element equal to v removed.
-    # index = findfirst(A, v) # valid in Julia 0.6, but the order switches in 0.7 ***
-    index = something(findfirst(isequal(v), A), 0)
+    #=
+    A: list
+    v: any; an element that may be present in list A
+
+    returns: list A with its first element equal to v removed.
+    =#
+    index = something(findfirst(isequal(v), A), 0)  # this horrible syntax introduced by Julia.
     keep = setdiff([1:length(A);],index)
     return A[keep]
 end
 
 function fluxsymbol(x)
+    #= Converts string x to a symbol. f for flux. =#
     Symbol(string("f",string(x)))
 end
 
 function readandskip(f, delim::Char, T::Type; skipstart=0)
     #= 
-    function to read in data from a file, skipping zero or more lines at the 
-    beginning.
+    reads in data from a file
+
+    f: file to read
+    delim: character that functions as delimiter
+    T: type to cast data to. e.g., "1" could be cast to String, Char, Int, Float, etc.
+    skipstart: initial number of rows in the file to ignore 
+
+    returns: array containing file data
     =# 
     f = open(f,"r")
     if skipstart>0
@@ -76,30 +88,42 @@ end
 # transport/scale height =======================================================
 
 function scaleH(z, T::Float64, mm::Real)
-    #= Computes the scale height of the atmosphere for the mean molar mass =#
+    #= 
+    Computes the general scale height of the atmosphere for the mean molar mass at some altitude
+
+    z: Float or Int; unit: cm. altitude in atmosphere at which to calculate scale height
+    T: temperature in Kelvin
+    mm: mean molar mass, in amu. 
+
+    returns: float value of the scale height
+    =#
     return boltzmannK*T/(mm*mH*marsM*bigG)*(((z+radiusM)*1e-2)^2)*1e2
     # constants are in MKS. Convert to m and back to cm.
 end
 
 function scaleH(z, species::Symbol)
     #=
-    computes scale height of the atmosphere for a specific species
+    Same as first scaleH, but for a particular atomic/molecular species.
     =#
-    T=Temp(z)
+    T = Temp(z)
     mm = speciesmolmasslist[species]
-    scaleH(z, T, mm)
+    return scaleH(z, T, mm)
 end
 
 function scaleH(z, T::Float64, species::Symbol)
     #=
-    computes scale height of the atmosphere for a specific species
+    Scale height for a particular species but with temperature specified.
     =#
     mm = speciesmolmasslist[species]
     scaleH(z, T, mm)
 end
 
 function scaleH(z, T::Float64, n_current)
-    #= Computes the scale height of the atmosphere for the mean molar mass =#
+    #= 
+    General scale height of the atmosphere specified in n_current.
+
+    n_current: an array of atmospheric species number densities by altitude
+    =#
     mm = meanmass(n_current, z)
     scaleH(z, T, mm)
 end
@@ -141,22 +165,27 @@ end
     and bottom of the atmosphere.
 =#
 
-function fluxcoefs(z, dz, Kv, Dv, Tv, Hsv, H0v, species) #ntv,
+function fluxcoefs(z, dz, Kv, Dv, Tv, Hsv, H0v, species)
     #= 
-    function to generate coefficients of the transport network.
-    z: altitude
-    dz: altitude layer thickness ("resolution")
-    Kv: eddy diffusion coefficient
-    Dv: molecular diffusion coefficient
-    Tv: temperature
-    Hsv: scale height by species
-    H0v: mean atmospheric scale height
+    function to generate coefficients of the transport network. 
+
+    z: Float64; altitude in cm.
+    dz: Float64; altitude layer thickness ("resolution")
+    Kv: Array; 3 elements (lower, this, and upper layer). eddy diffusion coefficient
+    Dv: Array; 3 elements, same as K. molecular diffusion coefficient
+    Tv: Array; 3 elements, same as K. temperature
+    Hsv: Array; 3 elements, same as K. scale height by species
+    H0v: Array; 3 elements, same as K. mean atmospheric scale height
     species: species symbol 
 
     v refers to "vector"
     u refers to "upper" (the upper parcel)
     l refers to "lower" (the lower parcel)
+
+    Returns: a list of the coefficients for [downward, upward] flux.
     =#
+
+    # Calculate the coefficients between this layer and the lower layer. 
     Dl = (Dv[1] + Dv[2])/2.0
     Kl = (Kv[1] + Kv[2])/2.0
     Tl = (Tv[1] + Tv[2])/2.0
@@ -164,11 +193,13 @@ function fluxcoefs(z, dz, Kv, Dv, Tv, Hsv, H0v, species) #ntv,
     Hsl = (Hsv[1] + Hsv[2])/2.0
     H0l = (H0v[1] + H0v[2])/2.0
 
-    # we have two flux terms to combine:
+    # two flux terms: eddy diffusion and gravity/thermal diffusion.
+    # these are found in line 5 of Mike's transport_as_chemistry.pdf. 
     sumeddyl = (Dl+Kl)/dz/dz
     gravthermall = (Dl*(1/Hsl + (1+thermaldiff(species))/Tl*dTdzl) +
                     Kl*(1/H0l + 1/Tl*dTdzl))/(2*dz)
 
+    # Now the coefficients between this layer and upper layer.
     Du = (Dv[2] + Dv[3])/2.0
     Ku = (Kv[2] + Kv[3])/2.0
     Tu = (Tv[2] + Tv[3])/2.0
@@ -176,7 +207,6 @@ function fluxcoefs(z, dz, Kv, Dv, Tv, Hsv, H0v, species) #ntv,
     Hsu = (Hsv[2] + Hsv[3])/2.0
     H0u = (H0v[2] + H0v[3])/2.0
 
-    # we have two flux terms to combine:
     sumeddyu = (Du+Ku)/dz/dz
     gravthermalu = (Du*(1/Hsu + (1 + thermaldiff(species))/Tu*dTdzu) +
                   Ku*(1/H0u + 1/Tu*dTdzu))/(2*dz)
@@ -187,7 +217,14 @@ function fluxcoefs(z, dz, Kv, Dv, Tv, Hsv, H0v, species) #ntv,
 end
 
 function fluxcoefs(z, dz, species, n_current)
-    # overload to generate the coefficients if they are not supplied
+    #= 
+    overload to generate the coefficients K, D, T, Hs if they are not supplied
+
+    p: upper layer ("plus")
+    0: this layer
+    m: lower layer ("minus")
+    =#
+
     ntp = n_tot(n_current, z+dz)
     nt0 = n_tot(n_current, z)
     ntm = n_tot(n_current, z-dz)
@@ -208,26 +245,22 @@ function fluxcoefs(z, dz, species, n_current)
     H0m = scaleH(z-dz, Tm, n_current)
 
     # return the coefficients
-    return fluxcoefs(z, dz,
-              [Km , K0, Kp],
-              [Dm , D0, Dp],
-              [Tm , T0, Tp],
-              [Hsm, Hs0, Hsp],
-              [H0m, H00, H0p],
-              species)
+    return fluxcoefs(z, dz, [Km , K0, Kp], [Dm , D0, Dp], [Tm , T0, Tp],
+                     [Hsm, Hs0, Hsp], [H0m, H00, H0p], species)
 end
 
 function lower_up(z, dz, species, n_current)
     #= 
     define transport coefficients for a given atmospheric layer for
-    transport from that layer to the one above. Variables ending in p refer to
-    the layer above ("plus"), in 0 refer to the current layer at altitude z,
-    and ending in m refer to the layer below ("minus") 
+    transport from that layer to the one above. 
+    p: layer above ("plus"), 0: layer at altitude z, m: layer below ("minus") 
 
-    z: altitude
-    dz: altitude layer thickness ("resolution")
-    species: species symbol
-    n_current: current atmospheric state in a matrix by altitude and species.
+    z: altitude in cm
+    dz: altitude layer thickness ("resolution"), in cm
+    species: Symbol; species for which this coefficients are calculated
+    n_current: Array; species number density by altitude
+
+    returns: return of fluxcoefs
     =#
     ntp = n_tot(n_current, z+dz)
     nt0 = n_tot(n_current, z)
@@ -261,14 +294,15 @@ end
 function upper_down(z, dz, species, n_current)
     #= 
     define transport coefficients for a given atmospheric layer for
-    transport from that layer to the one above. Variables ending in p refer to
-    the layer above ("plus"), in 0 refer to the current layer at altitude z,
-    and ending in m refer to the layer below ("minus") 
+    transport from that layer to the one below. 
+    p: layer above ("plus"), 0: layer at altitude z, m: layer below ("minus") 
 
-    z: altitude
-    dz: altitude layer thickness ("resolution")
-    species: species symbol
-    n_current: current atmospheric state in a matrix by altitude and species.
+    z: altitude in cm
+    dz: altitude layer thickness ("resolution"), in cm
+    species: Symbol; species for which this coefficients are calculated
+    n_current: Array; species number density by altitude
+
+    returns: return of fluxcoefs
     =#
     ntp = 1
     nt0 = n_tot(n_current, z)
@@ -300,7 +334,8 @@ function upper_down(z, dz, species, n_current)
 end
 
 function boundaryconditions(species, dz, n_current, surf_watersat, v_eff, Of)
-    #= returns the symbolic transport coefficients that encode the
+    #= 
+    returns the symbolic transport coefficients that encode the
     boundary conditions for the null-pointing equations
 
     n_1->NULL t_lower_bc
@@ -311,7 +346,18 @@ function boundaryconditions(species, dz, n_current, surf_watersat, v_eff, Of)
                 tspecies_lower_up and
                 tspecies_upper_down
     these are found by passing the appropriate values to fluxcoefs
-    and selecting the correct output
+    and selecting the correct output.
+
+    species: Symbol
+    dz: Float64; layer thickness in cm
+    n_current: Array; species number density by altitude
+    surf_watersat: Float64; Water vapor saturation at the surface, needs to be 
+                   passed in to the speciesbcs function.
+    v_eff: Float64; effusion velocity for the given species.
+    Of: Float64; oxygen flux boundary condition for the simulation.
+
+    returns: 2x2 boundary condition array where the first row is for the surface
+             layer and second row is for the top of the atmosphere. 
     =#
 
     bcs = speciesbcs(species, surf_watersat, v_eff, Of)
@@ -350,21 +396,83 @@ function boundaryconditions(species, dz, n_current, surf_watersat, v_eff, Of)
         throw("Improper upper boundary condition!")
     end
 
-    # return the bc vec
     return bcvec
 end
 
+function getflux(n_current, dz, species)
+    #=
+    Returns a 1D array of fluxes in and out of a given altitude level for a 
+    given species. For looking at vertical distribution of fluxes, but it does 
+    not modify the concentrations.
+
+    n_current: Array; species number density by altitude
+    dz: Float64; layer thickness in cm
+    species: Symbol
+
+    returns: Array of raw flux value (number of molecules) at each altitude layer
+    =#
+
+    # each element in thesecoefs has the format [downward, upward]
+    thesecoefs = [fluxcoefs(a, dz, species, n_current) for a in alt[2:end-1]]
+
+    # thesebcs has the format [lower bc; upper bc], where each row contains a 
+    # character showing the type of boundary condition, and a number giving its value
+    thesebcs = boundaryconditions(species, dz, n_current)
+
+    thesefluxes = fill(convert(Float64, NaN),length(intaltgrid))
+
+    # in the following line for the lowest layer: 
+    # first term is -(influx from layer above - outflux from this layer)
+    # second term is (-this layer's lower bc that depends on concentration + bc that doesn't depend on concentration)
+    thesefluxes[1] = (-(n_current[species][2]*thesecoefs[2][1]
+                        -n_current[species][1]*thesecoefs[1][2]) 
+                    +(-n_current[species][1]*thesebcs[1, 1]
+                      +thesebcs[1, 2]))/2.0
+    for ialt in 2:length(intaltgrid)-1
+        thesefluxes[ialt] = (-(n_current[species][ialt+1]*thesecoefs[ialt+1][1]
+                               -n_current[species][ialt]*thesecoefs[ialt][2])
+                             +(-n_current[species][ialt]*thesecoefs[ialt][1]
+                               +n_current[species][ialt-1]*thesecoefs[ialt-1][2]))/2.0
+    end
+    thesefluxes[end] = (-(thesebcs[2, 2]
+                          - n_current[species][end]*thesebcs[2, 1])
+                        + (-n_current[species][end]*thesecoefs[end][1]
+                           +n_current[species][end-1]*thesecoefs[end-1][2]))/2.0
+    return dz*thesefluxes
+end
+
+function fluxes(n_current, dz)
+    #=
+    Just runs getflux for all species
+
+    n_current: Array; species number density by altitude
+    dz: Float64; layer thickness in cm
+
+    returns: Array of flux at every altitude layer by species. 
+    =#
+    thesefluxes = fill(convert(Float64, NaN),(length(intaltgrid),length(specieslist)))
+    for isp in 1:length(specieslist)
+        thesefluxes[:,isp] = getflux(n_current, dz, specieslist[isp])
+    end
+    return thesefluxes
+end
+
+
 # chemistry equations ==========================================================
 
-# note: this whole section is basically witchcraft that Mike wrote and I've never
-# really looked into it in detail. I just trust it works. --Eryn
-
-# function to replace three body rates with the recommended expression
+# function to replace three body rates with the recommended expression. From Sander 2011
 threebody(k0, kinf) = :($k0*M/(1+$k0*M/$kinf)*0.6^((1+(log10($k0*M/$kinf))^2)^-1))
 threebodyca(k0, kinf) = :($k0/(1+$k0/($kinf/M))*0.6^((1+(log10($k0/($kinf*M)))^2)^-1))
 
 function meanmass(n_current, z)
-    #= find the mean molecular mass at a given altitude =#
+    #= 
+    find the mean molecular mass at a given altitude 
+
+    n_current: Array; species number density by altitude
+    z: Float64; altitude in atmosphere in cm
+
+    return: mean molecular mass in amu
+    =#
     thisaltindex = n_alt_index[z]
     c = [n_current[sp][thisaltindex] for sp in specieslist]
     m = [speciesmolmasslist[sp] for sp in specieslist]
@@ -550,40 +658,6 @@ function reactionrates(n_current)
                                                 n_tot(n_current, alt[ialt+1])]...)
     end
     return theserates
-end
-
-function getflux(n_current, dz, species)
-    #=
-    Returns a 1D array of fluxes in and out of a given altitude level for a given species
-    =#
-    thesecoefs = [fluxcoefs(a, dz, species, n_current) for a in alt[2:end-1]]
-    thesebcs = boundaryconditions(species, dz, n_current)
-
-    thesefluxes = fill(convert(Float64, NaN),length(intaltgrid))
-
-    thesefluxes[1] = (-(n_current[species][2]*thesecoefs[2][1]
-                      -n_current[species][1]*thesecoefs[1][2])
-                    +(-n_current[species][1]*thesebcs[1, 1]
-                      +thesebcs[1, 2]))/2.0
-    for ialt in 2:length(intaltgrid)-1
-        thesefluxes[ialt] = (-(n_current[species][ialt+1]*thesecoefs[ialt+1][1]
-                             - n_current[species][ialt]*thesecoefs[ialt][2])
-                             + (-n_current[species][ialt]*thesecoefs[ialt][1]
-                             + n_current[species][ialt-1]*thesecoefs[ialt-1][2]))/2.0
-    end
-    thesefluxes[end] = (-(thesebcs[2, 2]
-                        - n_current[species][end]*thesebcs[2, 1])
-                        + (-n_current[species][end]*thesecoefs[end][1]
-                        + n_current[species][end-1]*thesecoefs[end-1][2]))/2.0
-    return dz*thesefluxes
-end
-
-function fluxes(n_current, dz)
-    thesefluxes = fill(convert(Float64, NaN),(length(intaltgrid),length(specieslist)))
-    for isp in 1:length(specieslist)
-        thesefluxes[:,isp] = getflux(n_current, dz, specieslist[isp])
-    end
-    thesefluxes
 end
 
 function ratefn(nthis, inactive, Jrates, T, M, tup, tdown, tlower, tupper)
@@ -896,7 +970,7 @@ function update!(n_current::Dict{Symbol, Array{Float64, 1}},dt)
     tdown = Float64[issubset([sp],notransportspecies) ? 0.0 : fluxcoefs(a, dz, sp, n_current)[1] for sp in specieslist, a in alt[2:end-1]]
 
     # put the lower bcs and upper bcs in separate arrays; but they are not the
-    # right shape! TODO: make this more efficient?
+    # right shape! 
     tlower_temp = [boundaryconditions(sp, dz, n_current, surface_watersat, v_eff, Of)[1,:] for sp in specieslist]
     tupper_temp = [boundaryconditions(sp, dz, n_current, surface_watersat, v_eff, Of)[2,:] for sp in specieslist]
 

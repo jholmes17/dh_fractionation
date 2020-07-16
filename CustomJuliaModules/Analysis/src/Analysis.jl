@@ -159,8 +159,9 @@ end
 # Flux and f ===================================================================
 function get_flux(species, readfile, oflux, temps; repro=false, therm_only=false)
     #=
-    Retrieves the flux for a given species at the top of the equilibrated 
+    Retrieves the flux for either H or D at the top of the equilibrated 
     atmosphere.
+
     species: species in question, :H or :D. no error control right now
     readfile: the file with simulation results
     oflux: flux of O in /cm^2s. 
@@ -174,12 +175,18 @@ function get_flux(species, readfile, oflux, temps; repro=false, therm_only=false
     # conditions correcftly 
     exptype = match(r"[a-z]{0,5}(?=_.+)",readfile).match
 
+    # the species which can have ither D or H in them for loss.
     bearer = Dict(:D=>[:D, :HD], :H=>[:H, :HD, :H2])
     num_D_or_H = Dict(:D=>[1, 1], :H=>[1, 1, 2])
+
+    # this dict keeps track of loss due to each species. order: H, D, H2, HD
+    contrib_t = Dict(:H=>0., :D=>0., :H2=>0., :HD=>0.)
+    contrib_nt = Dict(:H=>0., :D=>0., :H2=>0., :HD=>0.)
+
     flux_t = 0
     flux_nt = 0
 
-    # set things up for the millionth time for accurate boundary conditions
+    # set things up for accurate boundary conditions
     Temp(z::Float64) = Tpiecewise(z, temps[1], temps[2], temps[3])
     Temp_keepSVP(z::Float64) = Tpiecewise(z, meanTs, meanTt, meanTe)
     if exptype=="temp"
@@ -199,24 +206,24 @@ function get_flux(species, readfile, oflux, temps; repro=false, therm_only=false
     v_eff = Dict("H"=>H_effusion_velocity, "D"=>D_effusion_velocity, 
                  "H2"=>H2_effusion_velocity, "HD"=>HD_effusion_velocity)
 
-    # Now, actually add up the fluxes 
+    # Calculate the thermal escape
     for (s, m) in zip(bearer[species], num_D_or_H[species])
-        # thermal only
-        flux_t += m * n_current[s][end]*speciesbcs(s, surface_watersat, v_eff, oflux)[2,2]
+        this_species_t_flux = m * n_current[s][end]*speciesbcs(s, surface_watersat, v_eff, oflux)[2,2]
+        flux_t += this_species_t_flux
+        contrib_t[s] += this_species_t_flux
     end
     
     # Nonthermal ecsape velocities for temperatures: T_exo = 158K, 205K, 264K. 
     # using ratios of thermal/nonthermal from Kras 2010, in cm/s.
     if therm_only==false
         if repro==false
-            # inds = Dict(158 => 1, 205 => 2, 264 => 3)  # convert the temp to an index
-            inds = Dict(150=>1, 205=>2, 250=>3) # the three exobase temps we use
-            i = inds[Int(temps[3])]
+            inds = Dict(150=>1, 205=>2, 250=>3) # indices for different exobase temps
+            i = inds[Int(temps[3])]             # convert exobase temp to an index 
             v_nt = Dict(:H => [3.8, 49.3, 106.5], :H2 => [1, 5.04, 11.5], 
                         :D => [8.6, 15.5, 24.2], :HD => [0.19, 3.9, 8.5])  #in cm/s. TODO: are these values suspicious?????
         else
             # If reproducing past studies, need the nonthermal escape from Kras 2002.
-            inds = Dict(200 => 1, 270 => 2, 350 => 3)  # convert the temp to an index
+            inds = Dict(200 => 1, 270 => 2, 350 => 3)
             i = inds[temps[3]]
             # Nonthermal: cm/s. Each species has a value recorded at T = 200K, 
             # 270K, and 350K.
@@ -225,15 +232,16 @@ function get_flux(species, readfile, oflux, temps; repro=false, therm_only=false
         end
 
         for (s, m) in zip(bearer[species], num_D_or_H[species])
-            flux_nt += m * n_current[s][end] * v_nt[s][i]
-            #flux += flux_nt
+            this_species_nt_flux = m * n_current[s][end] * v_nt[s][i]
+            flux_nt += this_species_nt_flux
+            contrib_nt[s] += this_species_nt_flux
         end
     end
 
     if therm_only==true
-        return flux_t
+        return flux_t, contrib_t
     else
-        return flux_t, flux_nt
+        return flux_t, flux_nt, contrib_t, contrib_nt
     end
 end
 
@@ -246,8 +254,11 @@ function calculate_f(thefile, flux_type, temps, oflux; reprod=false)
     =#
     ncur = get_ncurrent(thefile)
 
-    t_flux_H, nt_flux_H = get_flux(:H, thefile, oflux, temps, repro=reprod)
-    t_flux_D, nt_flux_D = get_flux(:D, thefile, oflux, temps, repro=reprod)
+    # contrib dictionaries (of how each bearer species contributes to escape)
+    # are not used in this function.
+
+    t_flux_H, nt_flux_H, contrib_t_H, contrib_nt_H = get_flux(:H, thefile, oflux, temps, repro=reprod)
+    t_flux_D, nt_flux_D, contrib_t_D, contrib_nt_D = get_flux(:D, thefile, oflux, temps, repro=reprod)
 
     if flux_type=="thermal"
         Hf = t_flux_H
