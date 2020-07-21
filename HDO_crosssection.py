@@ -1,7 +1,6 @@
 ################################################################################
 # HDO_crosssection.py
-# TYPE: Supporting (plot maker)
-# WHICH: Equilibrium and perturbation experiments
+# TYPE: (0) Setup files
 # DESCRIPTION: Takes a bunch of data from Cheng+1999 and Cheng+2004 to get HDO
 # cross sections by wavelength. The data is not complete for the wavelengths 
 # that we need, so extrapolation and fudge factors are employed to make it work.
@@ -27,7 +26,7 @@ plt.rcParams['axes.labelsize'] = 22
 plt.rcParams['xtick.labelsize'] = 18
 plt.rcParams['ytick.labelsize'] = 18
 
-research_dir = "/home/emc/GDrive-CU/Research/FractionationModeling/"
+research_dir = "/home/emc/GDrive-CU/Research-FF/"
 results_dir = research_dir+"Results/"
 
 # Fit the 250K data on the red edge and extrapolate to 220 nm ==================
@@ -70,11 +69,11 @@ combined_xsects_250K = np.hstack((data250[:, 2], new_xsects_250))
 # plt.show()
 
 # Now work on 298 K ============================================================
-# Show that it is reasonable to approximate the cross section with a 1D polynomial in 
-# logspace after ~178 nm.
 data298 = np.loadtxt("uvxsect/HDO_298K.dat")
 data298 = data298[:-5]  # get rid of the empty rows
 
+# Show that it is reasonable to approximate the cross section with a 1D polynomial in 
+# logspace after ~178 nm.
 # fig = plt.figure(figsize=(10, 8))
 # plt.rcParams.update({'font.size': 16})
 # plt.semilogy(a[:, 0], a[:, 2], color="cornflowerblue")
@@ -189,7 +188,7 @@ all_250_xsects = np.hstack((new_xsects_blu_298*0.5, cheng2004[:, 1]*0.5, data250
 # interpolate all the 250K data
 x_interp_250 = np.arange(121.5, 220, 1)  # wavelengths binned in 1 nm centered on whole integer wavelengths
 y_interp_250 = np.interp(x_interp_250, all_250_wvs, all_250_xsects)
-interpdata = np.column_stack((x_interp_250, y_interp_250))
+interpdata_250 = np.column_stack((x_interp_250, y_interp_250))
 
 # Final figure of HDO cross sections at 250 and 298K
 fig = plt.figure(figsize=(7, 5))

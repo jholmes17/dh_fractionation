@@ -1,15 +1,15 @@
 ################################################################################
 # reproductions_plot.jl
-# TYPE: SUPPORTING (plot maker)
-# WHICH: Equilibrium experiments
+# TYPE: (2) Analysis - required
 # DESCRIPTION: Makes a plot of reproductions of past studies. Is a separate 
 # file for simplicity and because it allows more easy access to modify the way
 # I calculate the reproduction of Krasnopolsky 2002 (which can be done either
 # as the models were run, or by including his nonthermal escape velocities)
 #
 # Eryn Cangi
-# 31 May 2019
-# Currently tested for Julia: 0.7
+# Created 31 May 2019
+# Last edited: 21 July 2020
+# Currently tested for Julia: 1.4.1
 ################################################################################
 
 using PyPlot

@@ -1,9 +1,13 @@
-###################
-# plot comparison of water loss results with other studies
-
+################################################################################
+# plot_waterloss_results_vs_others.py
+# TYPE: (2) Analysis - required
+# DESCRIPTION: Simple script to compare water loss results to others
+#
 # Eryn Cangi
-# 23 October 2019
-###################
+# Created 23 October 2019
+# Last edited: 21 July 2020
+# Currently tested for Python: 3+
+################################################################################
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches

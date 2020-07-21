@@ -1,13 +1,12 @@
 ################################################################################
 # plot_water_loss.jl
-# TYPE: Analysis
-# WHICH: Equilibrium
+# TYPE: (2) Analysis - required
 # DESCRIPTION: Estimates water lost from Mars for a given array of fractionation 
 # factors and plots it, along with the Rayleigh distillation equation.
 #
 # Eryn Cangi
-# 2019
-# Last edited: 21 April 2020
+# Created 2019
+# Last edited: 21 July 2020
 # Currently tested for Julia: 1.4.1
 ################################################################################
 
@@ -149,15 +148,11 @@ function plot_simple_water_loss(cur_h2o=25)
     savefig(results_dir*"ALL STUDY PLOTS/h2oloss_simple.png", bbox_inches="tight")
 end
 
-function main()
-    println("ALERT: Make sure the f values are correct."*
-            " They must be filled in manually, using output from plot_f_results.jl")
-    f_mean_thermal = 0.001899480829925377
-    f_therm_range = [3.26998e-5, 0.0171938]
-    f_mean_both = 0.06033344000516848
-    f_both_range = [0.0332205, 0.103425]
+println("ALERT: f values are hard-coded in this file. Make sure they're correct."*
+        " They must be filled in manually, using output from plot_f_results.jl")
+f_mean_thermal = 0.001899480829925377
+f_therm_range = [3.26998e-5, 0.0171938]
+f_mean_both = 0.06033344000516848
+f_both_range = [0.0332205, 0.103425]
 
-    plot_water_loss(f_mean_thermal, f_mean_both, f_therm_range, f_both_range)
-end
-
-main()
+plot_water_loss(f_mean_thermal, f_mean_both, f_therm_range, f_both_range)

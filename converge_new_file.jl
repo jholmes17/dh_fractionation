@@ -1,13 +1,12 @@
 ###############################################################################
 # converge_new_file.jl
-# TYPE: MAIN (main script)
-# WHICH: Equilibrium and perturbation experiments
+# TYPE: (1) Model files - required
 # DESCRIPTION: does initial convergence for a photochemistry experiment of the
-# Martian atmosphere. EXTENDS GRID TO 250 KM. I hope.
+# Martian atmosphere.
 # 
 # Eryn Cangi
-# 2018-2019
-# Last edited: 21 April 2020
+# Created 2018
+# Last edited: 21 July 2020
 # Currently tested for Julia: 1.4.1
 ###############################################################################
 
@@ -19,6 +18,7 @@ using Distributed
 using DelimitedFiles
 using SparseArrays
 using LinearAlgebra
+using ProgressMeter
 using Analysis  # my custom module
 
 include("PARAMETERS.jl")
@@ -1000,6 +1000,22 @@ function update!(n_current::Dict{Symbol, Array{Float64, 1}},dt)
     update_Jrates!(n_current)
 end
 
+function get_ncurrent(readfile)
+    #=
+    Retrieves the matrix of species concentrations by altitude from an HDF5
+    file containing a converged atmosphere.
+    =#
+    n_current_tag_list = map(Symbol, h5read(readfile,"n_current/species"))
+    n_current_mat = h5read(readfile,"n_current/n_current_mat");
+    n_current = Dict{Symbol, Array{Float64, 1}}()
+    
+    for ispecies in [1:length(n_current_tag_list);]
+        n_current[n_current_tag_list[ispecies]] = reshape(n_current_mat[:,ispecies],length(alt)-2)
+    end
+    return n_current
+end
+
+
 ################################################################################
 ################################## MAIN SETUP ##################################
 ################################################################################
@@ -1008,28 +1024,60 @@ end
 
 # Note: directory paths are in Analysis.jl
 # get command line arguments for experiment type. format:
+# <experiment type> <parameters> <solar cycle type>
+# examples: 
 # temp Tsurf Ttropo Texo; water <mixing ratio>; dh <multiplier>; Oflux <cm^-2s^-1>
 # examples: temp 190 110 200; water 1e-3; dh 8; Oflux 1.2e8.
 # last argument is solar cycle: min, mean, or max.
 args = Any[ARGS[i] for i in 1:1:length(ARGS)]
 
-# enter the arguments as extension to the filename (FNext); 
-FNdict = Dict("temp"=>"temp_$(args[2])_", "water"=>"water_$(args[2])", "dh"=>"dh_$(args[2])", 
-    "Oflux"=>"Oflux_$(args[2])")
-
-FNext = FNdict[args[1]]
+# Establish a pattern for filenames. FNext = filename extension
 if args[1]=="temp"
-    FNext = FNext * "$(args[3])_$(args[4])"
+    FNext = "temp_$(args[2])_$(args[3])_$(args[4])"
+elseif args[1]=="water"
+    FNext = "water_$(args[2])"
+elseif args[1]=="dh"
+    FNext = "dh_$(args[2])"
+elseif args[1]=="Oflux"
+    FNext = "Oflux_$(args[2])"
+else
+    throw("Error! Bad experiment type")
 end
 
 # Set up the folder if it doesn't exist
-println("ALERT: running sim for $(FNext)")
 create_folder(FNext, results_dir)
 
-# Set up the converged file to read from and load the simulation state at init.
-readfile = research_dir*"converged_250km_atmosphere.h5"
-println("ALERT: Using file: ", readfile)
-n_current = get_ncurrent(readfile)
+# Case where this file will be used to converge an atmosphere of a different extent
+make_new_alt_grid = input("Would you like to use the script to converge a new atmosphere of a different extent? (y/n): ")
+if make_new_alt_grid=="y"
+    readfile = research_dir*"converged_200km_atmosphere.h5"
+    const alt = convert(Array, (0:2e5:200e5))
+    n_current = get_ncurrent(readfile)
+
+    new_zmax = parse(Int64, input("Enter the new top of the atmosphere in km: "))
+    extra_entries = Int64((new_zmax - 200)/(dz/1e5))
+
+    # Extend the grid 
+    for (k,v) in zip(keys(n_current), values(n_current))
+       append!(v, fill(v[end], extra_entries))  # repeats the last value in the array for the upper atmo as an initial value.
+    end
+
+    const alt = convert(Array, (0:2e5:new_zmax*10^5))
+
+    if new_zmax != 250
+        println("Warning: You entered $(new_zmax) for the new max altitude but 
+                 250 is hard-coded in the PARAMETERS.jl file. I haven't made this
+                 general yet. So the code is probably about to break")
+    end
+elseif make_new_alt_grid=="n"
+    # Set up the converged file to read from and load the simulation state at init.
+    file_to_use = input("Enter the name of a file containing a converged, 250 km atmosphere to use (press enter to use default): ")
+    readfile = file_to_use == "" ? "converged_250km_atmosphere.h5" : file_to_use
+    n_current = get_ncurrent(readfile)
+else
+    throw("Didn't understand response")
+end
+
 
 # Set solar cycle file and alert user 
 cycle = args[end]
@@ -1037,13 +1085,17 @@ solar_data_file = Dict("max"=>"marssolarphotonflux_solarmax.dat",
                        "mean"=>"marssolarphotonflux_solarmean.dat", 
                        "min"=>"marssolarphotonflux_solarmin.dat")
 solarfile = solar_data_file[cycle]
-if cycle != "mean"
-    println("ALERT: Solar $(cycle) data being used")
-end
 
-# Parse the arguments 
+# Convert the arguments to numbers so we can use them to do maths
 for i in 2:1:length(args)-1
     args[i] = parse(Float64, args[i])
+end
+
+# Let the user know what is being done 
+println("ALERT: running sim for $(FNext)")
+println("ALERT: Using file: ", readfile)
+if cycle != "mean"
+    println("ALERT: Solar $(cycle) data being used")
 end
 
 # Plot styles ==================================================================
@@ -1938,8 +1990,8 @@ convfig, convax = subplots(figsize=(8,6))
 # convfig.show()
 # convfig.canvas.draw()
 
-[timeupdate(t) for t in [10.0^(1.0*i) for i in -3:14]]
-for i in 1:100
+@showprogress 0.1 "Converging over 10 My..." [timeupdate(t) for t in [10.0^(1.0*i) for i in -3:14]]
+@showprogress 0.1 "Last convergence steps..." for i in 1:100
     plotatm(n_current, "1e14", i)
     # println("dt: 1e14 iter $(i)")
     update!(n_current, 1e14)
@@ -2007,16 +2059,5 @@ end
 
 close(f)
 
-println("ALERT: Finished convergence")
+println("ALERT: Finished")
 println()
-
-# extra code to calculate final water - if letting water vary
-# H2O_per_cc_final = sum(n_current[:H2O][1:end])
-# HDO_per_cc_final = sum(n_current[:HDO][1:end])
-# H2Oprum_final = (H2O_per_cc_final * dz) * (18/1) * (1/6.02e23) * (1/1) * (1e4/1)
-# HDOprum_final = (HDO_per_cc_final * dz) * (19/1) * (1/6.02e23) * (19/18) * (1e4/1)
-
-# f2 = open(results_dir*FNext*"/finalwater_"*FNext*".txt", "w")
-# write(f2, "H2O pr μm: $(H2Oprum_final)\n")
-# write(f2, "HDO pr μm: $(HDOprum_final)\n")
-# close(f)

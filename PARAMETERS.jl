@@ -1,18 +1,19 @@
 ################################################################################
 # PARAMETERS.jl
-# TYPE: MAIN (constants)
-# WHICH: Equilibrium and perturbation experiments
+# TYPE: (1) Model files - required
 # DESCRIPTION: Just some standard global constants that need to get used 
-# EVERYWHERE
+# EVERYWHERE. Also the chemical reaction network.
 # 
 # Eryn Cangi
-# December 2019
-# Last edited: 21 April 2020
+# Created December 2019
+# Last edited: 21 July 2020
 # Currently tested for Julia: 1.4.1
 ################################################################################
 
 research_dir = "/home/emc/GDrive-CU/Research-FF/"
 results_dir = research_dir*"Results/"
+main_cases_dir = "MainCases/"
+det_cases_dir = "DetailedCases/"
 
 # fundamental constants ========================================================
 const boltzmannK = 1.38e-23;    # J/K

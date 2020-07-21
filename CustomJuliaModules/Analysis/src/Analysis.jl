@@ -18,7 +18,7 @@ export get_ncurrent, write_ncurrent, n_tot,
        effusion_velocity, speciesbcs, 
        areadensity_to_micron_atm, molec_to_GEL, GEL_to_molecule, 
        get_flux, calculate_f, 
-       search_subfolders, create_folder, searchdir,
+       search_subfolders, create_folder, searchdir, input,
        get_colors, get_grad_colors, plot_bg,
        Tpiecewise, Psat, Psat_HDO
 
@@ -31,7 +31,7 @@ function get_ncurrent(readfile)
     n_current_tag_list = map(Symbol, h5read(readfile,"n_current/species"))
     n_current_mat = h5read(readfile,"n_current/n_current_mat");
     n_current = Dict{Symbol, Array{Float64, 1}}()
-    
+
     for ispecies in [1:length(n_current_tag_list);]
         n_current[n_current_tag_list[ispecies]] = reshape(n_current_mat[:,ispecies],length(alt)-2)
     end
@@ -421,6 +421,9 @@ function create_folder(foldername, parentdir)
     end
 end
 
-# push!(LOAD_PATH, @__DIR__)
+function input(prompt::String="")::String
+   print(prompt)
+   return chomp(readline())
+end
 
 end
