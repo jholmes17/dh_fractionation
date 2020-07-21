@@ -2,7 +2,7 @@
 
 ## Description/Overview
 
-This project was forked from planetarymike/chaffin_natgeo_mars_photochemistry and modified substantially to study the effects of atmospheric temperature and water vapor content on the D/H fractionation on Mars. 
+This project was forked from planetarymike/chaffin_natgeo_mars_photochemistry and modified substantially to study the effects of atmospheric temperature and water vapor content on the D/H fractionation on Mars. We submitted a paper using this code to JGR: Plants on 16 July 2020.
 
 The code is a 1D photochemical model of the Martian atmosphere, with the only coordinate being altitude in the atmosphere. The model output is stored as .h5 files, in a matrix of species number density (rows) by altitude (columns). 
 
@@ -33,8 +33,8 @@ The model includes the following physics, chemistry, and computation:
 ## Requirements
 
 Languages:
-Julia 1.4.1
-Python 3+ (some of the analysis files are in Python because I didn't want to make the effort to fit lines in Julia)
+- Julia 1.4.1
+- Python 3+ (some of the analysis files are in Python because I didn't want to make the effort to fit lines in Julia)
 
 Packages (Julia), used in either all scripts or some scripts:
 - PyPlot
@@ -60,18 +60,16 @@ Files are called as follows:
 
 I used all of these, but anyone trying to use my code should only need to use these if the goal is to make a significant change to the model before using it.
 
-(0a) HDO_crosssection.py: Uses data for HDO cross sections from Cheng+1999 and Cheng+2004 to fully extrapolate to missing wavelengths ~121 and 220 nm. Figure S1 in paper.
+(0a) `HDO_crosssection.py`: Uses data for HDO cross sections from Cheng+1999 and Cheng+2004 to fully extrapolate to missing wavelengths ~121 and 220 nm. Figure S1 in paper.
 	
-(0b) OD_crosssection.py - TODO: create file from sandbox. Smashes together OD cross section data between 115-180 nm from Nee 1985 with OH cross sections from Barfield 1972. Figure S2. 
+(0b) `OD_crosssection.py` - Smashes together OD cross section data between 115-180 nm from Nee 1985 with OH cross sections from Barfield 1972. Figure S2. NOTE: this file doesn't exist yet, the code is buried in a jupyter notebook. I'll get it in here I promise.
 
-(0c) SolarCycle.ipynb
-
-Scales data on solar irradiance by wavelength from Earth orbiters for solar mean conditions to Mars' orbit. 
+(0c) `SolarCycle.ipynb`: Scales data on solar irradiance by wavelength from Earth orbiters for solar mean conditions to Mars' orbit. 
 
 
 (1) Model files - required
 
-(1a) converge_new_file.jl
+(1a) `converge_new_file.jl`
 
 This can be used to either (1) converge a new atmosphere with a different altitudinal extent, starting from a converged file for a 0-200 km atmosphere, or (2) use the default 250 km atmosphere to run a simulation for given temperature or water vapor parameters. It can also be used to test different atmospheric D/H ratios and values of escape of O in #/cm^2/s, but I only used those for testing and did not include in the paper.
 
@@ -86,11 +84,11 @@ Inputs for running new simulations:
 Outputs:
 - A converged atmosphere h5 file with a specific name that depends on the type of experiment run (temperature or water vapor). The file contains an array of species densities by altitude.
 
-(1b) PARAMETERS.jl
+(1b) `PARAMETERS.jl`
 
 This file contains key global constants and general simulation parameters, as well as the chemistry reaction network. 
 
-(1c) plot_profiles.jl
+(1c) `plot_profiles.jl`
 
 This allows the user to plot the temperature and water vapor profiles that are used in the model.
 
@@ -105,15 +103,15 @@ These scripts are required to analyze the model. If you run all these scripts, y
 
 The order here doesn't matter except check_eq.jl should be run on each model output file and return an affirmative result before making any plots.
 
-(2a) check_eq.jl: Used to check that the atmospheric escape has reached stoichiometric balance, such that Φ_H + Φ_D = 2Φ_O
+(2a) `check_eq.jl`: Used to check that the atmospheric escape has reached stoichiometric balance, such that Φ_H + Φ_D = 2Φ_O
 
-(2b) plot_all_results.jl: Contains code to make all results Figures (Figures 4 through 7 and 9, 10, S4)
+(2b) `plot_all_results.jl`: Contains code to make all results Figures (Figures 4 through 7 and 9, 10, S4)
 
-(2c) plot_water_loss.jl: Makes a plot of water loss as a function of various assumptions about current water inventory and the results for f shown in Figure 4.
+(2c) `plot_water_loss.jl`: Makes a plot of water loss as a function of various assumptions about current water inventory and the results for f shown in Figure 4.
 
-(2d) plot_waterloss_results_vs_others.py: Simple comparison plot, Figure 11 in paper 
+(2d) `plot_waterloss_results_vs_others.py`: Simple comparison plot, Figure 11 in paper 
 
-(2e) reproductions_plot.jl: Makes a plot of results for f when reproducing past studies. Includes past study values for comparison. Figure S3
+(2e) `reproductions_plot.jl`: Makes a plot of results for f when reproducing past studies. Includes past study values for comparison. Figure S3
 
 ## Notes for using this code
 
@@ -123,23 +121,27 @@ Note that any instructions here are written for Ubuntu Linux. They probably also
 
 Add the folder in which you will store the scripts to your julia startup file. Assuming the folder is /home/username/dh_fractionation/:
 
-> cd ~/.julia/config
-> vim startup.jl
-> i
-> cd("/home/username/dh_fractionation/")
-> :wq
+```shell
+	~/.julia/config
+	vim startup.jl
+	i
+	cd("/home/username/dh_fractionation/")
+	:wq
+```
 
 ### Using the custom Julia module
 
-In order for the various files to load Analysis.jl (custom module of functions), you will need to add its folder to your machine's $JULIA_LOAD_PATH variable. The codebase is not set up to specify a definite path for this module. 
+In order for the various files to load `Analysis.jl`, you will need to add its folder to your machine's `$JULIA_LOAD_PATH` variable. The codebase is not set up to specify a definite path for this module. 
 
-To see what's on your JULIA_LOAD_PATH variable:
+To see what's on your `JULIA_LOAD_PATH` variable:
 
-> echo $JULIA_LOAD_PATH
+```shell
+echo $JULIA_LOAD_PATH
+```
 
-To add the folder to the JULIA_LOAD_PATH variable, add the following line to either your ~/.bashrc or ~/.profile files:
+To add the folder to the `JULIA_LOAD_PATH` variable, add the following line to either your ~/.bashrc or ~/.profile files:
 
-export JULIA_LOAD_PATH=$JULIA_LOAD_PATH:/home/username/path/to/custom/modules
+`export JULIA_LOAD_PATH=$JULIA_LOAD_PATH:/home/username/path/to/custom/modules`
 
 Note that the custom modules folder should be a subfolder of the main script folder. If the main script folder is /home/username/dh_fractionation/, then the module folder structure should look like this: /home/username/dh_fractionation/CustomJuliaModules
 
