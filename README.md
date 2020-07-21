@@ -1,5 +1,6 @@
 # Mars D/H fractionation as a function of atmospheric parameters
 
+---
 ## Description/Overview
 
 This project was forked from planetarymike/chaffin_natgeo_mars_photochemistry and modified substantially to study the effects of atmospheric temperature and water vapor content on the D/H fractionation on Mars. We submitted a paper using this code to JGR: Plants on 16 July 2020.
@@ -29,7 +30,7 @@ The model includes the following physics, chemistry, and computation:
 	- Transport
 	- Solution using the Gear method
 
-
+---
 ## Requirements
 
 Languages:
@@ -51,7 +52,7 @@ Packages (Julia), used in either all scripts or some scripts:
 - DataFrames
 - Analysis.jl (my custom module including functions shared by multiple scripts within this project. Included here at Github)
 
-
+---
 ## Script/file call order and usage
 
 Files are called as follows:
@@ -113,6 +114,8 @@ The order here doesn't matter except check_eq.jl should be run on each model out
 
 (2e) `reproductions_plot.jl`: Makes a plot of results for f when reproducing past studies. Includes past study values for comparison. Figure S3
 
+---
+
 ## Notes for using this code
 
 Note that any instructions here are written for Ubuntu Linux. They probably also work on Macs, but I haven't used Macs in a long time. If you're using Windows, sorry, you're on your own... using Windows to code is a bold move!
@@ -146,3 +149,9 @@ To add the folder to the `JULIA_LOAD_PATH` variable, add the following line to e
 Note that the custom modules folder should be a subfolder of the main script folder. If the main script folder is /home/username/dh_fractionation/, then the module folder structure should look like this: /home/username/dh_fractionation/CustomJuliaModules
 
 Within CustomModules you should place the Analysis folder, which is provided here on Github.
+
+---
+
+## Support
+
+If you have any questions, please contact the lead author/repo owner at: eryn.cangi@colorado.edu
