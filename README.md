@@ -73,12 +73,12 @@ I used all of these, but anyone trying to use my code should only need to use th
 
 This can be used to either (1) converge a new atmosphere with a different altitudinal extent, starting from a converged file for a 0-200 km atmosphere, or (2) use the default 250 km atmosphere to run a simulation for given temperature or water vapor parameters. It can also be used to test different atmospheric D/H ratios and values of escape of O in #/cm^2/s, but I only used those for testing and did not include in the paper.
 
-Note that the code is written so that you can converge an atmosphere of any new max altitude, BUT it assumes the new max altitude is higher than 200 km. Also, the max altitude of 250 km is hard coded in PARAMETERS.jl, so even if you choose some other max altitude, the code will probably break because I didn't udpate it to account for user-chosen max altitudes since I only needed to go up to 250 km.
+Note that the code is written so that you can converge an atmosphere of any new max altitude, BUT it assumes the new max altitude is higher than 200 km. Also, the max altitude of 250 km is hard coded in `PARAMETERS.jl`, so even if you choose some other max altitude, the code will probably break because I didn't udpate it to account for user-chosen max altitudes since I only needed to go up to 250 km.
 
 Inputs for running new simulations:
 - converged_250km_atmosphere.h5: a pre-converged atmosphere. The water profiles are goofy in the upper atmosphere, which is why this gets re-converged once new water profiles are prescribed within the simulation run.
 - cross section data, stored in uvxsect folder. For a list of files, see Photochemical Crosssections/Crosssection Files within this file. 
-- marssolarphotonflux_solarmean.dat - photon flux (γ/s/cm^2/nm) by wavelength for 0-2400 nm. Files for solar max, solar min also available.
+- `marssolarphotonflux_solarmean.dat` - photon flux (γ/s/cm^2/nm) by wavelength for 0-2400 nm. Files for solar max, solar min also available.
 - Temperatures: either specified by calling the file with command line args "temp Tsurf Ttropo Texo" or the mean values
 - Water vapor mixing ratio in the lower atmosphere: This is a little weird, you have to try a few options while printing the resulting pr μm of water vapor to see what mixing ratio corresponds to what pr μm, aiming for pr μm of 1, 10, 25, 50, 100. Sorry.
 Outputs:
