@@ -10,7 +10,7 @@
 # Currently tested for Julia: 1.4.1
 ################################################################################
 
-research_dir = "/home/emc/GDrive-CU/Research-FF/"
+research_dir = "/home/emc/GDrive-CU/Research-Modeling/Fracation Factor/Code/"
 results_dir = research_dir*"Results/"
 main_cases_dir = "MainCases/"
 det_cases_dir = "DetailedCases/"

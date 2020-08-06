@@ -12,7 +12,7 @@ using PlotUtils
 
 # using Photochemistry
 
-include("/home/emc/GDrive-CU/Research-FF/PARAMETERS.jl")
+include("../../../PARAMETERS.jl")
 
 export get_ncurrent, write_ncurrent, n_tot, 
        effusion_velocity, speciesbcs, 

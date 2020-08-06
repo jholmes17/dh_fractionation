@@ -1022,7 +1022,7 @@ end
 
 # Set up simulation files and experiment type ==================================
 
-# Note: directory paths are in Analysis.jl
+# Note: directory paths are in PARAMETERS.jl
 # get command line arguments for experiment type. format:
 # <experiment type> <parameters> <solar cycle type>
 # examples: 
@@ -1146,7 +1146,7 @@ n_current[:JODtoO1DpD] = zeros(length(alt))
 ####################### TEMPERATURE/PRESSURE PROFILES ##########################
 ################################################################################
 
-# see Photchemistry module for the temperature function Tpiecewise!
+# see Analysis module for the temperature function Tpiecewise!
 
 function plot_temp_prof(savepath, alt)
     #=
