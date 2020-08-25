@@ -219,10 +219,8 @@ function get_flux(species, readfile, oflux, temps; repro=false, therm_only=false
         if repro==false
             inds = Dict(150=>1, 205=>2, 250=>3) # indices for different exobase temps
             i = inds[Int(temps[3])]             # convert exobase temp to an index 
-            v_nt = Dict(:H => [26.7, 34.4, 45.1], :H2 => [8.05, 10.2, 13.26], # OLD - linear behavior
-                        :D => [10.65, 13.47, 17.47], :HD => [5.65, 6.00, 7.42])  #in cm/s.
-            # v_nt = Dict(:H => [3.8, 49.3, 106.5], :H2 => [1, 5.04, 11.5], # OLD - linear behavior
-            #             :D => [8.6, 15.5, 24.2], :HD => [0.19, 3.9, 8.5])  #in cm/s.
+            v_nt = Dict(:H => [26.7, 34.4, 45.1], :H2 => [8.05, 10.2, 13.26], # assuming 2nd order polynomial
+                        :D => [10.65, 13.47, 17.47], :HD => [5.65, 6.00, 7.42])  # in cm/s.
         else
             # If reproducing past studies, need the nonthermal escape from Kras 2002.
             inds = Dict(200 => 1, 270 => 2, 350 => 3)
