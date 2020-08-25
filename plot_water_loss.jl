@@ -13,6 +13,7 @@
 using Analysis
 using PyPlot
 using PyCall
+using JLD
 
 include("PARAMETERS.jl")
 
@@ -56,7 +57,7 @@ function plot_water_loss(f_therm, f_both, f_therm_range=nothing, f_both_range=no
     ax = gca()
     plot_bg(ax)
     xlabel("Current exchangeable water (m GEL)")
-    ylabel("Total water escape (m GEL)")
+    ylabel("Total water loss (m GEL)")
     # title("Water lost since 4.5 Ga")
 
     # plot 
@@ -66,8 +67,8 @@ function plot_water_loss(f_therm, f_both, f_therm_range=nothing, f_both_range=no
     loss_t = h2olost(cur_h2o, 5.5, 1.275, f_therm)
     loss_b = h2olost(cur_h2o, 5.5, 1.275, f_both)
 
-    ax.plot(cur_h2o, loss_t, zorder=2, color=blues[1, :], marker="D")
-    ax.plot(cur_h2o, loss_b, zorder=2, color=blues[2, :], marker="D")
+    ax.plot(cur_h2o, loss_t, zorder=2, color=blues[1, :], marker="D", label="f=0.002")
+    ax.plot(cur_h2o, loss_b, zorder=2, color=blues[2, :], marker="D", label="f=0.06")
 
     if f_therm_range != nothing
         therm_min_loss = h2olost(cur_h2o, 5.5, 1.275, f_therm_range[1])
@@ -82,6 +83,15 @@ function plot_water_loss(f_therm, f_both, f_therm_range=nothing, f_both_range=no
         ax.fill_between(cur_h2o, both_min_loss, both_max_loss, zorder=2,
                         alpha=0.4, color=blues[2, :])
     end
+
+    ax.text(21, 83, "thermal+non-thermal escape", rotation=24, color=blues[2, :])
+    ax.text(22, 68, "thermal escape only", rotation=23, color=blues[1, :])
+
+    ax.legend()
+
+    savefig(results_dir*"ALL STUDY PLOTS/h2oloss.png", bbox_inches="tight")
+    savefig(results_dir*"MainCases/h2oloss.png", bbox_inches="tight")
+
     println("Thermal escape water loss (based on f for mean temperature profile):")
     println(Array(loss_t))
     println("All escape water loss (based on f for mean temperature profile): ")
@@ -100,12 +110,50 @@ function plot_water_loss(f_therm, f_both, f_therm_range=nothing, f_both_range=no
     println(Array(both_min_loss))
     println("All escape maximum water loss (f maxima):")
     println(Array(both_max_loss))
+end
 
-    text(21, 83, "thermal+non-thermal escape", rotation=24, color=blues[2, :])
-    text(22, 68, "thermal escape only", rotation=23, color=blues[1, :])
+function plot_water_loss_vs_temp()
+    #=
+    Plot water loss as a result of fractionation factor results and also a line
+    according to the D/H ratio used. 
 
-    savefig(results_dir*"ALL STUDY PLOTS/h2oloss.png", bbox_inches="tight")
-    savefig(results_dir*"MainCases/h2oloss.png", bbox_inches="tight")
+    f_therm: mean fractionation factor for only thermal escape
+    f_both: mean fractionation factor for both thermal + nonthermal
+    f_therm_range: min and max fractionation factor for thermal escape
+    f_both_range: min and max fractionation factor for all types of escape
+    =#
+    # set up the domain 
+    cur_h2o = 25 # a random value in the range
+
+    # make plot look nice
+    fig = figure(figsize=(7,5))
+    rcParams["font.family"] = "sans-serif"
+    rcParams["font.sans-serif"] = "Louis George Caf?"
+    rcParams["font.monospace"] = "FreeMono"
+    rcParams["font.size"] = 18
+    rcParams["axes.labelsize"] = 20
+    rcParams["xtick.labelsize"] = 18
+    rcParams["ytick.labelsize"] = 18
+    ax = gca()
+    plot_bg(ax)
+    xlabel("Temperature (K)")
+    ylabel("Total water loss (m GEL)")
+
+    # plot 
+    blues = get_grad_colors(2, "Blues", strt=0.5)
+
+    # calculate and plot the loss for mean f
+    T_abs_dicts = load(results_dir*det_cases_dir*"T_abs_data.jld")
+    f_by_temp = T_abs_dicts["T_data_abs"]["exobase"]["f"]
+    println(f_by_temp)
+
+    loss_t = [h2olost(cur_h2o, 5.5, 1.275, f) for f in f_by_temp]
+    # loss_b = h2olost(cur_h2o, 5.5, 1.275, f_both)
+
+    ax.plot(150:25:350, loss_t, zorder=2, color=blues[1, :], marker="D")
+    ax.text(150, 120, "Water loss via thermal escape\nfor a current inventory of 25 m GEL", color=medgray, va="top")
+    savefig(results_dir*"ALL STUDY PLOTS/h2oloss-bytemp.png", bbox_inches="tight")
+    savefig(results_dir*"MainCases/h2oloss-bytemp.png", bbox_inches="tight")
 end
 
 function plot_simple_water_loss(cur_h2o=25)
@@ -152,7 +200,9 @@ println("ALERT: f values are hard-coded in this file. Make sure they're correct.
         " They must be filled in manually, using output from plot_f_results.jl")
 f_mean_thermal = 0.001899480829925377
 f_therm_range = [3.26998e-5, 0.0171938]
-f_mean_both = 0.06033344000516848
-f_both_range = [0.0332205, 0.103425]
+f_mean_both = 0.05964736746762264
+f_both_range = [0.0354146, 0.0971759]
 
 plot_water_loss(f_mean_thermal, f_mean_both, f_therm_range, f_both_range)
+
+plot_water_loss_vs_temp()

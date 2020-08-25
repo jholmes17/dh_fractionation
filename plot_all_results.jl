@@ -968,7 +968,7 @@ function make_small_water_plots(water_x, d, DHdata, q, nom_i, s)
     normed_dict = Dict()
 
     # make plots pretty
-    rcParams = PyDict(matplotlib."rcParams")
+    
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
@@ -1048,7 +1048,6 @@ function make_small_Oflux_plots(phiO, phiO_str, d, DHdata, q, nom_i, s)
     normed_dict = Dict()
 
     # make plots pretty
-    rcParams = PyDict(matplotlib."rcParams")
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
@@ -1126,7 +1125,6 @@ function make_small_T_plots(T, T_str, d, DHdata, exp, q, nomT, s)
     =#
 
     # make plots pretty
-    rcParams = PyDict(matplotlib."rcParams")
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
@@ -1231,7 +1229,6 @@ function make_Oflux_main_plots(output_MR, output_abs)
          allowed to follow the temp profile (SVP="vary")
     =#
     # make plots pretty
-    rcParams = PyDict(matplotlib."rcParams")
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
@@ -1354,7 +1351,6 @@ function make_water_Hspecies_plot(output_dict, abs_or_mr)
     normidx = findfirst(isequal(10), watervals[1:1:length(watervals)])
 
     # make plots pretty
-    rcParams = PyDict(matplotlib."rcParams")
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
@@ -1422,7 +1418,6 @@ end
 
 function make_water_output_vs_data(output_MR, output_abs)
     #=TODO: Fill me in=#
-    rcParams = PyDict(matplotlib."rcParams")
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
@@ -1473,7 +1468,6 @@ function make_water_f_plot(output_MR)
     =#
 
     # make plots pretty
-    rcParams = PyDict(matplotlib."rcParams")
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
@@ -1524,7 +1518,6 @@ function make_water_loss_contribs_plot(output_abs)
     =#
 
     # make plots pretty
-    rcParams = PyDict(matplotlib."rcParams")
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
@@ -1629,7 +1622,6 @@ function make_T_Hspecies_plot(output_dict, abs_or_mr)
     nomdict = make_std_atmo_dict(abs_or_mr) # get info for nom case which has values not % by 10
 
     # make plots pretty
-    rcParams = PyDict(matplotlib."rcParams")
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
@@ -1730,12 +1722,11 @@ function make_T_output_vs_data(output_MR, output_abs)
     xt_args = Dict("surface"=>150:20:280, "tropopause"=>100:10:160, "exobase"=>150:50:350)
     linelbls = DataFrame(Exp=["surface", "tropopause", "exobase"],
                           CO=[[155, -3],  [100, -5],   [175, -5]],
-                          O2=[[220, -3],  [115, -1.8],   [150, -2.3]],
-                          H2=[[180, 1],   [100, 2.3],  [150, 4.1]],
+                          O2=[[220, -1.2],  [115, -1.8],   [150, -2.3]],
+                          H2=[[180, 0.8],   [100, 2.3],  [150, 4.1]],
                           O3=[[155, 110], [100, -0.8], [155, -0.8]])
 
     # make plots pretty
-    rcParams = PyDict(matplotlib."rcParams")
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
@@ -1813,7 +1804,6 @@ function make_T_f_plot(output_MR)
     =#
 
     # make plots pretty
-    rcParams = PyDict(matplotlib."rcParams")
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
@@ -1892,7 +1882,6 @@ function make_T_loss_contribs_plot(output_abs)
     =#
 
     # make plots pretty
-    rcParams = PyDict(matplotlib."rcParams")
     rcParams["font.family"] = "sans-serif"
     rcParams["font.sans-serif"] = ["Louis George Caf?"]
     rcParams["font.monospace"] = ["FreeMono"]
@@ -2051,12 +2040,12 @@ println("Enter a folder to use, no slashes (e.g. Research/Results/DetailedCases/
 append_me = readline(stdin)
 detailed_results_dir = results_dir*"DetailedCases/"*append_me*"/"
 
-makeplots = false   # whether to make the individiual small plots, one per species/measurable,
+makeplots = true   # whether to make the individiual small plots, one per species/measurable,
                     # that go with each experiment
 other_deuterated = false  # set to true to look at minor D-carrying species. 
                           # WARNING: not implemented for main results plots, only for 
                           # the small supplemental plots!
-write_new_files = false  # set to true if running for first time after new simulations
+write_new_files = true  # set to true if running for first time after new simulations
 
 # 0. small supplemental plots (not used in paper)
 # 1. f as a function of parameter (e.g. temperature or water vapor)

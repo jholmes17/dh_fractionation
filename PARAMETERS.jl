@@ -10,7 +10,7 @@
 # Currently tested for Julia: 1.4.1
 ################################################################################
 
-research_dir = "/home/emc/GDrive-CU/Research-Modeling/Fracation Factor/Code/"
+research_dir = "/home/emc/GDrive-CU/Research-Modeling/FractionationFactor/Code/"
 results_dir = research_dir*"Results/"
 main_cases_dir = "MainCases/"
 det_cases_dir = "DetailedCases/"
@@ -87,6 +87,9 @@ const speciesmolmasslist = Dict(:CO2=>44, :O2=>32, :O3=>48, :H2=>2, :OH=>17,
 
 
 # Plotty plot plot stuff =======================================================
+
+rcParams = PyDict(matplotlib."rcParams")
+
 speciescolor = Dict( # H group
                 :H => "#ff0000", :D => "#ff0000", # red
                 :H2 => "#e526d7", :HD =>  "#e526d7", # dark pink/magenta
